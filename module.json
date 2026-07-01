@@ -1,0 +1,23 @@
+{
+  "id": "battle-army-tools",
+  "title": "Battle Army Tools",
+  "description": "Army-scale battle helper tools: automatic movement watcher, hover tooltip, and turn HUD.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Thom Moore"
+    }
+  ],
+  "compatibility": {
+    "minimum": "12",
+    "verified": "14"
+  },
+  "scripts": [
+    "scripts/battle-army-tools.js"
+  ],
+  "styles": [
+    "styles/battle-army-tools.css"
+  ],
+  "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.1.0/battle-army-tools-v0.1.0.zip"
+}
