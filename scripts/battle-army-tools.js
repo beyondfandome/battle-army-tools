@@ -3,7 +3,7 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.1.1";
+  const MODULE_VERSION = "0.1.2";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";
@@ -935,6 +935,119 @@
     return `${used} / ${allowance} used, ${remaining} left`;
   }
 
+  function signedNumber(value) {
+    const n = Number(value || 0);
+    if (n > 0) return `+${n}`;
+    return String(n);
+  }
+
+  function signedDice(value) {
+    const n = Number(value || 0);
+    if (n === 0) return "+0";
+    return n > 0 ? `+${n}` : String(n);
+  }
+
+  function statusClass(unit) {
+    const hp = getHp(unit);
+    const maxHp = getMaxHp(unit);
+    const status = String(unit?.status || "Active");
+
+    if (status === "Routed" || hp <= 0) return "bat-status-routed";
+    if (hp <= Math.floor(maxHp * 0.2)) return "bat-status-danger";
+    if (hp <= Math.floor(maxHp * 0.5)) return "bat-status-warning";
+    return "bat-status-active";
+  }
+
+  function statLine(baseValue, bonusValue, label = "terrain") {
+    const base = Number(baseValue || 0);
+    const bonus = Number(bonusValue || 0);
+    const total = base + bonus;
+
+    if (bonus === 0) {
+      return `<strong>${escapeHtml(base)}</strong>`;
+    }
+
+    return `<strong>${escapeHtml(total)}</strong><span class="bat-tooltip-muted"> ${escapeHtml(base)} ${signedDice(bonus)} ${escapeHtml(label)}</span>`;
+  }
+
+  function terrainAttackBonus(unit, terrain) {
+    return getTerrainValue(terrain, "attackBonusFrom");
+  }
+
+  function terrainDefenceBonus(unit, terrain) {
+    return getTerrainValue(terrain, "defenceBonus");
+  }
+
+  function terrainRangedDefenceBonus(unit, terrain) {
+    return getTerrainValue(terrain, "defenceBonus") + getTerrainValue(terrain, "rangedDefenceBonus");
+  }
+
+  function terrainRangeBonus(unit, terrain) {
+    if (!isRangedCapableUnit(unit)) return 0;
+    return getTerrainValue(terrain, "rangeBonusFrom");
+  }
+
+  function movementBreakdown(unit, terrain) {
+    const baseMove = Number(unit.movement || 0);
+    const terrainPenalty = getTerrainValue(terrain, "movementPenalty");
+    const terrainBonus = getTerrainValue(terrain, "movementBonus");
+
+    const parts = [];
+
+    if (terrainPenalty) parts.push(`${signedNumber(terrainPenalty)} step cost`);
+    if (terrainBonus) parts.push(`+${terrainBonus} allowance`);
+
+    if (parts.length === 0) {
+      return `<strong>${escapeHtml(baseMove)}</strong><span class="bat-tooltip-muted"> no terrain move modifier</span>`;
+    }
+
+    return `<strong>${escapeHtml(baseMove)}</strong><span class="bat-tooltip-muted"> ${escapeHtml(parts.join(" / "))}</span>`;
+  }
+
+  function terrainEffectRows(unit, terrain) {
+    const rows = [];
+
+    const defenceBonus = getTerrainValue(terrain, "defenceBonus");
+    const rangedDefenceBonus = getTerrainValue(terrain, "rangedDefenceBonus");
+    const attackPenaltyInto = getTerrainValue(terrain, "attackPenaltyInto");
+    const attackBonusFrom = getTerrainValue(terrain, "attackBonusFrom");
+    const rangeBonusFrom = getTerrainValue(terrain, "rangeBonusFrom");
+    const movementPenalty = getTerrainValue(terrain, "movementPenalty");
+    const movementBonus = getTerrainValue(terrain, "movementBonus");
+
+    if (movementPenalty || movementBonus) {
+      rows.push(["Movement", `${movementPenalty ? signedNumber(movementPenalty) + " step cost" : "+0 penalty"}${movementBonus ? " / +" + movementBonus + " allowance" : ""}`]);
+    }
+
+    if (attackBonusFrom) rows.push(["Attack From Terrain", `${signedDice(attackBonusFrom)} dice`]);
+    if (defenceBonus) rows.push(["Defence In Terrain", `${signedDice(defenceBonus)} dice`]);
+    if (rangedDefenceBonus) rows.push(["Extra vs Ranged", `${signedDice(rangedDefenceBonus)} dice`]);
+    if (rangeBonusFrom && isRangedCapableUnit(unit)) rows.push(["Range From Terrain", `${signedDice(rangeBonusFrom)} squares`]);
+    if (attackPenaltyInto) rows.push(["Enemy Ranged Attack Into", `${signedDice(-attackPenaltyInto)} attack dice`]);
+    if (terrain?.chargeBlocked) rows.push(["Charge", "Blocked here"]);
+
+    if (rows.length === 0) {
+      return `<div class="bat-tooltip-row"><span>Effects</span><strong>None</strong></div>`;
+    }
+
+    return rows.map(([label, value]) => {
+      return `<div class="bat-tooltip-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+    }).join("");
+  }
+
+  function tooltipSection(title, rowsHtml) {
+    return `
+      <div class="bat-tooltip-section">
+        <div class="bat-tooltip-section-title">${escapeHtml(title)}</div>
+        ${rowsHtml}
+      </div>
+    `;
+  }
+
+  function rowHtml(label, valueHtml) {
+    return `<div class="bat-tooltip-row"><span>${escapeHtml(label)}</span>${valueHtml}</div>`;
+  }
+
   function buildTooltipHtml(token) {
     const unit = getBattleUnitFromToken(token);
     if (!unit) return "";
@@ -946,33 +1059,48 @@
     const hp = getHp(unit);
     const maxHp = getMaxHp(unit);
     const status = unit.status || "Active";
+    const hpPercent = clamp(maxHp > 0 ? hp / maxHp : 0, 0, 1);
 
-    const chargeBlocked = terrain?.chargeBlocked ? "Yes" : "No";
-    const terrainMove = getTerrainValue(terrain, "movementPenalty");
-    const terrainBonus = getTerrainValue(terrain, "movementBonus");
+    const attackBonus = terrainAttackBonus(unit, terrain);
+    const defenceBonus = terrainDefenceBonus(unit, terrain);
+    const rangedDefenceBonus = terrainRangedDefenceBonus(unit, terrain);
+    const rangeBonus = terrainRangeBonus(unit, terrain);
+
+    const coreRows =
+      rowHtml("Status", `<strong class="bat-status-pill ${statusClass(unit)}">${escapeHtml(status)}</strong>`) +
+      rowHtml("HP", `<strong class="${statusClass(unit)}">${escapeHtml(hp)} / ${escapeHtml(maxHp)}</strong><div class="bat-tooltip-mini-bar"><div style="width:${Math.round(hpPercent * 100)}%;"></div></div>`) +
+      rowHtml("Attack", statLine(unit.attack, attackBonus, "terrain")) +
+      rowHtml("Defence", statLine(unit.defence, defenceBonus, "terrain")) +
+      rowHtml("Vs Ranged Defence", statLine(unit.defence, rangedDefenceBonus, "terrain")) +
+      rowHtml("Range", statLine(unit.range, rangeBonus, "terrain")) +
+      rowHtml("Move", movementBreakdown(unit, terrain));
+
+    const turnRows =
+      rowHtml("Movement", `<strong>${escapeHtml(movementText(unit))}</strong>`) +
+      rowHtml("Moved / Attacked", `<strong>${unit.hasMoved ? "Yes" : "No"} / ${unit.hasAttacked ? "Yes" : "No"}</strong>`) +
+      rowHtml("Ammo", `<strong>${escapeHtml(getAmmoText(unit))}</strong>`) +
+      rowHtml("Can Volley", `<strong class="${canVolley(unit) ? "bat-good" : "bat-muted"}">${canVolley(unit) ? "Yes" : "No"}</strong>`) +
+      rowHtml("Ability", `<strong>${escapeHtml(unit.ability || "None")}</strong>`);
+
+    const commandRows =
+      rowHtml("Commander", `<strong>${escapeHtml(command.text)}</strong>`) +
+      rowHtml("Team", `<strong>${escapeHtml(unit.team || "-")}</strong>`) +
+      rowHtml("Alliance", `<strong>${escapeHtml(unit.alliance || "-")}</strong>`) +
+      rowHtml("Formation", `<strong>${escapeHtml(unit.formationName || "-")}</strong>`);
+
+    const terrainRows =
+      rowHtml("Terrain", `<strong>${escapeHtml(getTerrainName(terrain))}</strong>`) +
+      terrainEffectRows(unit, terrain);
 
     return `
-      <div class="bat-tooltip-title">${escapeHtml(getUnitName(unit, token.name))}</div>
-      <div class="bat-tooltip-grid">
-        <div>Status</div><strong>${escapeHtml(status)}</strong>
-        <div>HP</div><strong>${escapeHtml(hp)} / ${escapeHtml(maxHp)}</strong>
-        <div>Attack</div><strong>${escapeHtml(unit.attack ?? "-")}</strong>
-        <div>Defence</div><strong>${escapeHtml(unit.defence ?? "-")}</strong>
-        <div>Range</div><strong>${escapeHtml(unit.range ?? "-")}</strong>
-        <div>Move</div><strong>${escapeHtml(unit.movement ?? "-")}</strong>
-        <div>Movement</div><strong>${escapeHtml(movementText(unit))}</strong>
-        <div>Moved / Attacked</div><strong>${unit.hasMoved ? "Yes" : "No"} / ${unit.hasAttacked ? "Yes" : "No"}</strong>
-        <div>Ammo</div><strong>${escapeHtml(getAmmoText(unit))}</strong>
-        <div>Can Volley</div><strong>${canVolley(unit) ? "Yes" : "No"}</strong>
-        <div>Ability</div><strong>${escapeHtml(unit.ability || "None")}</strong>
-        <div>Commander</div><strong>${escapeHtml(command.text)}</strong>
-        <div>Team</div><strong>${escapeHtml(unit.team || "-")}</strong>
-        <div>Alliance</div><strong>${escapeHtml(unit.alliance || "-")}</strong>
-        <div>Formation</div><strong>${escapeHtml(unit.formationName || "-")}</strong>
-        <div>Terrain</div><strong>${escapeHtml(getTerrainName(terrain))}</strong>
-        <div>Terrain Move</div><strong>${terrainMove >= 0 ? "+" : ""}${escapeHtml(terrainMove)} penalty / +${escapeHtml(terrainBonus)} bonus</strong>
-        <div>Charge Blocked</div><strong>${chargeBlocked}</strong>
+      <div class="bat-tooltip-title-row">
+        <div class="bat-tooltip-title">${escapeHtml(getUnitName(unit, token.name))}</div>
+        <div class="bat-tooltip-status ${statusClass(unit)}">${escapeHtml(status)}</div>
       </div>
+      ${tooltipSection("Core Stats", coreRows)}
+      ${tooltipSection("Turn State", turnRows)}
+      ${tooltipSection("Command & Formation", commandRows)}
+      ${tooltipSection("Terrain Bonuses", terrainRows)}
     `;
   }
 
