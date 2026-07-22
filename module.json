@@ -1,8 +1,8 @@
 {
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
-  "description": "Army-scale battle helper tools: left-docked hover tooltip, turn HUD with commander command tokens, movement watcher, custom HP bars, action panel, and player-safe GM-applied combat resolution. v0.2.2 enables module sockets for player combat requests.",
-  "version": "0.2.2",
+  "description": "Army-scale battle helper tools: left-docked hover tooltip, turn HUD with commander command tokens, movement watcher, custom HP bars, action panel, and player-safe GM-applied combat resolution. v0.2.3 adds active-turn combat enforcement and moves the HUD/action panel to the left side of the screen.",
+  "version": "0.2.3",
   "authors": [
     {
       "name": "Thom Moore"
@@ -19,6 +19,6 @@
     "styles/battle-army-tools.css"
   ],
   "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.2.2/battle-army-tools-v0.2.2.zip",
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.2.3/battle-army-tools-v0.2.3.zip",
   "socket": true
 }

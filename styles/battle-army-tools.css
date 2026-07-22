@@ -136,7 +136,8 @@
 
 .battle-army-tools-turn-hud {
   position: fixed;
-  right: 14px;
+  left: 14px;
+  right: auto;
   bottom: 14px;
   z-index: 99990;
   width: 245px;
@@ -194,7 +195,8 @@
 
 .battle-army-tools-action-panel {
   position: fixed;
-  right: 14px;
+  left: 14px;
+  right: auto;
   bottom: 230px;
   z-index: 99991;
   width: 245px;

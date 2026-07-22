@@ -1,8 +1,8 @@
-# Battle Army Tools v0.2.2
+# Battle Army Tools v0.2.3
 
 Army-scale battle helpers for Foundry VTT.
 
-## Included in v0.2.2
+## Included in v0.2.3
 
 - Left-docked hover tooltip by default
   - HP/status, attack, defence, range, movement, ammo, command, formation, terrain bonuses
@@ -19,6 +19,9 @@ Army-scale battle helpers for Foundry VTT.
   - players select their attacker and target a defender
   - the player chooses combat options
   - the active GM client applies the result through the module socket
+- Active-turn combat enforcement
+  - player attacks are blocked unless the attacker matches the current turn tracker team/alliance/commander/formation
+  - GM direct attacks can still override for corrections/testing when enabled in settings
 - Combat resolver
   - attack vs defence d10 pools
   - terrain modifiers
@@ -73,3 +76,8 @@ battle-army-tools-v0.2.2.zip
 
 - Adds `socket: true` to the manifest so player combat requests can be received by the active GM client.
 - Keeps the v0.2.1 active-GM same-scene routing behaviour.
+
+
+## Layout Update
+
+- Battle Turn HUD and Battle Actions panel are positioned on the left side so they do not obscure chat.

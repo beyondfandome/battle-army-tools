@@ -3,7 +3,7 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.2.2";
+  const MODULE_VERSION = "0.2.3";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";
@@ -157,6 +157,22 @@
       "allowPlayerCombatRequests",
       "Allow Player Combat Requests",
       "Let players request combat resolution from their selected attacker against their targeted defender. The active GM performs the actual token updates.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "enforceActiveTurnForCombat",
+      "Enforce Active Turn for Combat",
+      "Prevent players from resolving combat with an attacker that does not match the current turn tracker side, commander, alliance, or formation.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "allowGmOutOfTurnCombat",
+      "Allow GM Out-of-Turn Combat Override",
+      "Let the GM resolve out-of-turn combat directly for corrections and testing. Player requests are still blocked when active-turn enforcement is enabled.",
       Boolean,
       true
     );
@@ -383,7 +399,12 @@
 
   function getCurrentSide(turnState) {
     if (!turnState) return null;
-    return turnState.order?.[turnState.sideIndex] || null;
+    return (
+      turnState.currentSide ||
+      turnState.order?.[turnState.sideIndex] ||
+      turnState.order?.[turnState.currentIndex] ||
+      null
+    );
   }
 
   function getCurrentPhase(turnState) {
@@ -1354,6 +1375,101 @@
     return token;
   }
 
+  function normaliseTurnText(value) {
+    return String(value ?? "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function getTurnTrackingMode(turnState) {
+    const raw = String(turnState?.tracking || turnState?.mode || "team").trim().toLowerCase();
+
+    if (raw.includes("alliance")) return "alliance";
+    if (raw.includes("commander")) return "commander";
+    if (raw.includes("formation")) return "formation";
+
+    return "team";
+  }
+
+  function getTurnTrackingLabel(mode) {
+    if (mode === "alliance") return "Alliance";
+    if (mode === "commander") return "Commander";
+    if (mode === "formation") return "Formation";
+    return "Team";
+  }
+
+  function getUnitTurnValue(unit, mode) {
+    if (mode === "alliance") {
+      return String(unit?.alliance || "No Alliance");
+    }
+
+    if (mode === "commander") {
+      return String(
+        unit?.commanderName ||
+        unit?.commanderActorName ||
+        unit?.commander ||
+        unit?.commanderId ||
+        "No Commander"
+      );
+    }
+
+    if (mode === "formation") {
+      return String(unit?.formationName || unit?.formation || "No Formation");
+    }
+
+    return String(unit?.team || "No Team");
+  }
+
+  function getCurrentTurnSideName(turnState) {
+    if (!turnState) return null;
+
+    return (
+      turnState.currentSide ||
+      turnState.order?.[turnState.sideIndex] ||
+      turnState.order?.[turnState.currentIndex] ||
+      null
+    );
+  }
+
+  function validateAttackerMatchesActiveTurn(attackerToken, attackerUnit, requesterName = game.user.name) {
+    if (!setting("enforceActiveTurnForCombat")) return true;
+
+    const turnState = getCurrentTurnState();
+    const currentSide = getCurrentTurnSideName(turnState);
+
+    // If the tracker has not been configured yet, do not hard-block combat.
+    if (!turnState || !currentSide) return true;
+
+    const mode = getTurnTrackingMode(turnState);
+    const label = getTurnTrackingLabel(mode);
+    const attackerSide = getUnitTurnValue(attackerUnit, mode);
+
+    if (normaliseTurnText(attackerSide) === normaliseTurnText(currentSide)) {
+      return true;
+    }
+
+    const unitName = getUnitName(attackerUnit, attackerToken?.name || "Selected attacker");
+    const message =
+      "Out-of-turn combat blocked. Current " +
+      label +
+      " is " +
+      currentSide +
+      ", but " +
+      unitName +
+      " belongs to " +
+      attackerSide +
+      ".";
+
+    const isDirectGmAction = game.user.isGM && normaliseTurnText(requesterName) === normaliseTurnText(game.user.name);
+
+    if (isDirectGmAction && setting("allowGmOutOfTurnCombat")) {
+      ui.notifications.warn("GM override: " + message);
+      return true;
+    }
+
+    throw new Error(message);
+  }
+
   function getDistanceInSquares(tokenA, tokenB) {
     const gridSize = canvas.scene.grid.size || 100;
     const dx = Math.abs(Number(tokenA.document.x || 0) - Number(tokenB.document.x || 0)) / gridSize;
@@ -2032,6 +2148,8 @@
     if (!attackerToken || !defenderToken) throw new Error("Could not find attacker or defender token on this scene.");
 
     const context = await buildCombatContext(attackerToken, defenderToken, false);
+    validateAttackerMatchesActiveTurn(context.attackerToken, context.attackerUnit, requesterName);
+
     const possible = getCombatAbilityOptions(context.attackerUnit, context.defenderUnit, context.distance, context.effectiveRange, context.attackerTerrain, context.defenderTerrain);
     const options = sanitizeCombatOptions(requestedOptions, possible);
 
@@ -2207,6 +2325,8 @@
       if (!defenderToken) return;
 
       const context = await buildCombatContext(attackerToken, defenderToken, true);
+      validateAttackerMatchesActiveTurn(attackerToken, context.attackerUnit, game.user.name);
+
       const options = await askCombatOptionsForModule(context);
       if (!options) {
         ui.notifications.warn("Combat cancelled.");
