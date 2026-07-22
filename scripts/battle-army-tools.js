@@ -3,7 +3,7 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.2.1";
+  const MODULE_VERSION = "0.2.2";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";

@@ -1,8 +1,8 @@
-# Battle Army Tools v0.2.1
+# Battle Army Tools v0.2.2
 
 Army-scale battle helpers for Foundry VTT.
 
-## Included in v0.2.1
+## Included in v0.2.2
 
 - Left-docked hover tooltip by default
   - HP/status, attack, defence, range, movement, ammo, command, formation, terrain bonuses
@@ -59,11 +59,17 @@ https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.js
 
 For GitHub release assets, upload this ZIP as:
 
-battle-army-tools-v0.2.1.zip
+battle-army-tools-v0.2.2.zip
 
 
-## v0.2.1 hotfix
+## v0.2.2 hotfix
 
 - Player combat requests now prefer an active GM/Assistant GM viewing the same scene.
 - The player notification names the GM who received the request.
 - GM-side warnings are clearer when a request reaches a GM who is not on the battle scene.
+
+
+## v0.2.2 Hotfix
+
+- Adds `socket: true` to the manifest so player combat requests can be received by the active GM client.
+- Keeps the v0.2.1 active-GM same-scene routing behaviour.
