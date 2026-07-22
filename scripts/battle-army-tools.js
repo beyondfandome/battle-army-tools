@@ -3,7 +3,7 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.2.3";
+  const MODULE_VERSION = "0.2.4";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";
@@ -173,6 +173,22 @@
       "allowGmOutOfTurnCombat",
       "Allow GM Out-of-Turn Combat Override",
       "Let the GM resolve out-of-turn combat directly for corrections and testing. Player requests are still blocked when active-turn enforcement is enabled.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "enforceActiveTurnForMovement",
+      "Enforce Active Turn for Movement",
+      "Prevent players from moving units that do not match the current turn tracker side, commander, alliance, or formation.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "allowGmOutOfTurnMovement",
+      "Allow GM Out-of-Turn Movement Override",
+      "Let the GM move out-of-turn units directly for corrections, setup, and testing. Player movement is still blocked when active-turn movement enforcement is enabled.",
       Boolean,
       true
     );
@@ -739,6 +755,14 @@
 
       if (!isActiveUnit(unit)) {
         ui.notifications.warn("Inactive units cannot move.");
+        delete pendingMoves[tokenDocument.id];
+        return false;
+      }
+
+      try {
+        validateMoverMatchesActiveTurn(tokenDocument, unit, game.user.name);
+      } catch (err) {
+        ui.notifications.warn(err.message || String(err));
         delete pendingMoves[tokenDocument.id];
         return false;
       }
@@ -1463,6 +1487,45 @@
     const isDirectGmAction = game.user.isGM && normaliseTurnText(requesterName) === normaliseTurnText(game.user.name);
 
     if (isDirectGmAction && setting("allowGmOutOfTurnCombat")) {
+      ui.notifications.warn("GM override: " + message);
+      return true;
+    }
+
+    throw new Error(message);
+  }
+
+  function validateMoverMatchesActiveTurn(tokenDocument, unit, requesterName = game.user.name) {
+    if (!setting("enforceActiveTurnForMovement")) return true;
+
+    const turnState = getCurrentTurnState();
+    const currentSide = getCurrentTurnSideName(turnState);
+
+    // If the tracker has not been configured yet, do not hard-block movement.
+    if (!turnState || !currentSide) return true;
+
+    const mode = getTurnTrackingMode(turnState);
+    const label = getTurnTrackingLabel(mode);
+    const unitSide = getUnitTurnValue(unit, mode);
+
+    if (normaliseTurnText(unitSide) === normaliseTurnText(currentSide)) {
+      return true;
+    }
+
+    const unitName = getUnitName(unit, tokenDocument?.name || "Selected unit");
+    const message =
+      "Out-of-turn movement blocked. Current " +
+      label +
+      " is " +
+      currentSide +
+      ", but " +
+      unitName +
+      " belongs to " +
+      unitSide +
+      ".";
+
+    const isDirectGmAction = game.user.isGM && normaliseTurnText(requesterName) === normaliseTurnText(game.user.name);
+
+    if (isDirectGmAction && setting("allowGmOutOfTurnMovement")) {
       ui.notifications.warn("GM override: " + message);
       return true;
     }
