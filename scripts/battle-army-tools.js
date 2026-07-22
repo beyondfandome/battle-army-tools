@@ -3,7 +3,7 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.2.0";
+  const MODULE_VERSION = "0.2.1";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";
@@ -2164,7 +2164,18 @@
   }
 
   function getActiveGmUser() {
-    return game.users.find((user) => user.isGM && user.active) || null;
+    const activeGms = game.users.contents.filter((user) => user.isGM && user.active);
+    if (!activeGms.length) return null;
+
+    const sceneId = canvas?.scene?.id || null;
+
+    // Prefer a GM/Assistant GM who is actually viewing the same battle scene.
+    // This avoids sending the request to another logged-in GM account sitting on a different scene or screen.
+    const sameSceneGm = activeGms.find((user) => String(user.viewedScene || "") === String(sceneId || ""));
+    if (sameSceneGm) return sameSceneGm;
+
+    // Fallback for Foundry versions/situations where viewedScene is not populated.
+    return activeGms[0] || null;
   }
 
   async function requestCombatResolutionFromGm(attackerId, defenderId, options) {
@@ -2174,15 +2185,18 @@
     game.socket.emit(`module.${MODULE_ID}`, {
       type: SOCKET_TYPE_COMBAT_REQUEST,
       gmUserId: gm.id,
+      gmName: gm.name,
       requesterUserId: game.user.id,
       requesterName: game.user.name,
       sceneId: canvas.scene.id,
+      sceneName: canvas.scene.name,
       attackerId,
       defenderId,
-      options
+      options,
+      requestId: foundry.utils.randomID()
     });
 
-    ui.notifications.info("Combat request sent to the active GM for resolution.");
+    ui.notifications.info(`Combat request sent to GM ${gm.name} for resolution.`);
   }
 
   async function resolveCombatFromSelection() {
@@ -2218,12 +2232,14 @@
     if (!payload || payload.type !== SOCKET_TYPE_COMBAT_REQUEST) return;
     if (!game.user.isGM) return;
     if (payload.gmUserId && payload.gmUserId !== game.user.id) return;
+
     if (!canvas?.scene || payload.sceneId !== canvas.scene.id) {
-      ui.notifications.warn(`Combat request from ${payload.requesterName || "player"} ignored because the GM is not on the same scene.`);
+      ui.notifications.warn(`Combat request from ${payload.requesterName || "player"} was sent to ${payload.gmName || game.user.name}, but this GM is not on scene ${payload.sceneName || payload.sceneId}. Open that battle scene, then have the player try again.`);
       return;
     }
 
     try {
+      ui.notifications.info(`Resolving combat request from ${payload.requesterName || "player"}...`);
       await resolveCombatByTokenIds(payload.attackerId, payload.defenderId, payload.options, payload.requesterName);
       ui.notifications.info(`Resolved combat request from ${payload.requesterName || "player"}.`);
     } catch (err) {
