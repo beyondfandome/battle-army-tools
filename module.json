@@ -1,11 +1,11 @@
 {
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
-  "description": "Army-scale battle helper tools: automatic movement watcher, enhanced hover tooltip with terrain bonus breakdown, turn HUD, routed-pool movement bypass, commander tokens, ammo display, terrain info, and occupied-square blocking.",
-  "version": "0.1.2",
+  "description": "Army-scale battle helper tools: left-docked hover tooltip, turn HUD with commander command tokens, movement watcher, custom HP bars, action panel, and player-safe GM-applied combat resolution.",
+  "version": "0.2.0",
   "authors": [
     {
-      "name": "Thom Mormont"
+      "name": "Thom Moore"
     }
   ],
   "compatibility": {
@@ -19,5 +19,5 @@
     "styles/battle-army-tools.css"
   ],
   "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.1.2/battle-army-tools-v0.1.2.zip"
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.2.0/battle-army-tools-v0.2.0.zip"
 }

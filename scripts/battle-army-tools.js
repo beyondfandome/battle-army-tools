@@ -3,16 +3,21 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.1.2";
+  const MODULE_VERSION = "0.2.0";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";
   const TERRAIN_FLAG_KEY = "battleTerrain";
   const COMMANDER_KEY = "battleCommander";
   const TURN_TRACKER_KEY = "battleTurnState";
+  const ROUTED_POOL_TOKEN_NAME_DEFAULT = "Routed Pool";
+
+  const SOCKET_TYPE_COMBAT_REQUEST = "combatRequest";
+  const SOCKET_TYPE_COMBAT_RESULT = "combatResult";
 
   const TOOLTIP_ID = "battle-army-tools-tooltip";
   const HUD_ID = "battle-army-tools-turn-hud";
+  const PANEL_ID = "battle-army-tools-action-panel";
 
   const CLEAR_TERRAIN = {
     key: "clear",
@@ -44,7 +49,11 @@
     hpBars: {
       active: false,
       updateHandler: null
-    }
+    },
+    panel: {
+      active: false
+    },
+    socketRegistered: false
   };
 
   function setting(key) {
@@ -113,9 +122,17 @@
     );
 
     registerSetting(
+      "tooltipDockLeft",
+      "Dock Hover Tooltip Left",
+      "Keep the battle tooltip docked on the left side of the screen instead of following the mouse.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
       "enableTurnHud",
       "Enable Battle Turn HUD",
-      "Show a compact HUD with current round, side, phase, and current side command tokens.",
+      "Show a compact HUD with current round, side, and current side command tokens.",
       Boolean,
       true
     );
@@ -124,6 +141,38 @@
       "enableHpBars",
       "Enable Custom Battle HP Bars",
       "Draw custom HP bars on battle unit tokens.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "enableActionPanel",
+      "Enable Battle Action Panel",
+      "Show a compact action panel with Resolve Combat and reset helpers.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "allowPlayerCombatRequests",
+      "Allow Player Combat Requests",
+      "Let players request combat resolution from their selected attacker against their targeted defender. The active GM performs the actual token updates.",
+      Boolean,
+      true
+    );
+
+    registerSetting(
+      "routedPoolTokenName",
+      "Routed Pool Token Name",
+      "Name of the token used as the anchor for routed units.",
+      String,
+      ROUTED_POOL_TOKEN_NAME_DEFAULT
+    );
+
+    registerSetting(
+      "rallyPromptOnMoraleFailure",
+      "Prompt Rally on Morale Failure",
+      "When a unit fails morale and has a commander token available, ask the GM whether to spend one command token to rally instead of routing.",
       Boolean,
       true
     );
@@ -139,6 +188,7 @@
 
   Hooks.once("ready", () => {
     exposeApi();
+    registerSocketHandler();
     restartEnabledFeatures();
     ui.notifications.info(`${MODULE_TITLE} ${MODULE_VERSION} ready.`);
   });
@@ -514,8 +564,7 @@
     return Boolean(
       options?.battleRoutedPoolMove ||
       options?.bypassBattleMovementWatcher ||
-      options?.teleport ||
-      unit?.routedPoolTransferInProgress
+      options?.teleport
     );
   }
 
@@ -1105,12 +1154,19 @@
   }
 
   function positionTooltip(el) {
+    if (setting("tooltipDockLeft")) {
+      el.style.left = "14px";
+      el.style.top = "86px";
+      el.style.width = "360px";
+      return;
+    }
+
     const mouse = canvas?.app?.renderer?.plugins?.interaction?.mouse?.global;
     const x = Number(mouse?.x || window.innerWidth / 2);
     const y = Number(mouse?.y || window.innerHeight / 2);
 
-    el.style.left = `${Math.min(window.innerWidth - 340, x + 18)}px`;
-    el.style.top = `${Math.min(window.innerHeight - 260, y + 18)}px`;
+    el.style.left = `${Math.min(window.innerWidth - 380, x + 18)}px`;
+    el.style.top = `${Math.min(window.innerHeight - 300, y + 18)}px`;
   }
 
   function showTooltip(token) {
@@ -1220,22 +1276,29 @@
       el.innerHTML = `
         <div class="bat-hud-title">Battle Turn</div>
         <div class="bat-hud-small">No tracker state on this scene.</div>
+        <div class="bat-hud-small">Use your Battle Turn Tracker macro to create turn state.</div>
       `;
       el.style.display = "block";
       return;
     }
 
-    const side = getCurrentSide(turnState) || "Unknown";
-    const phase = getCurrentPhase(turnState) || "Unknown";
+    const side = getCurrentSide(turnState) || turnState.currentSide || "Unknown";
+    const phase = getCurrentPhase(turnState) || turnState.currentPhase || turnState.phase || null;
+    const mode = turnState.mode || turnState.turnMode || "Side";
+    const phaseHtml = phase
+      ? `<div class="bat-hud-line"><span>Phase</span><strong>${escapeHtml(phase)}</strong></div>`
+      : "";
 
     el.innerHTML = `
       <div class="bat-hud-title">Battle Turn</div>
       <div class="bat-hud-line"><span>Round</span><strong>${escapeHtml(turnState.round || 1)}</strong></div>
-      <div class="bat-hud-line"><span>${escapeHtml(turnState.mode || "Side")}</span><strong>${escapeHtml(side)}</strong></div>
-      <div class="bat-hud-line"><span>Phase</span><strong>${escapeHtml(phase)}</strong></div>
+      <div class="bat-hud-line"><span>${escapeHtml(mode)}</span><strong>${escapeHtml(side)}</strong></div>
+      ${phaseHtml}
       <div class="bat-hud-divider"></div>
       <div class="bat-hud-subtitle">Command Tokens</div>
       ${commanderRowsForSide(turnState)}
+      <div class="bat-hud-divider"></div>
+      <div class="bat-hud-small">Select attacker + target defender, then use Resolve Combat.</div>
     `;
 
     el.style.display = "block";
@@ -1244,6 +1307,1054 @@
   function removeTurnHud() {
     const el = document.getElementById(HUD_ID);
     if (el) el.remove();
+  }
+
+
+  /* ----------------------------------------------------------------------- */
+  /* Battle action panel + player-safe combat resolver                         */
+  /* ----------------------------------------------------------------------- */
+
+  function getTokenById(tokenId) {
+    return canvas?.tokens?.get(tokenId) || canvas?.tokens?.placeables?.find((token) => token.id === tokenId || token.document.id === tokenId) || null;
+  }
+
+  function getControlledBattleToken() {
+    const selected = canvas.tokens?.controlled || [];
+    if (selected.length !== 1) {
+      ui.notifications.warn("Select exactly one attacking battle unit.");
+      return null;
+    }
+
+    const token = selected[0];
+    const unit = getBattleUnitFromToken(token);
+
+    if (!unit) {
+      ui.notifications.warn("Selected token is not a battle unit.");
+      return null;
+    }
+
+    return token;
+  }
+
+  function getSingleTargetedBattleToken() {
+    const targets = Array.from(game.user.targets || []);
+    if (targets.length !== 1) {
+      ui.notifications.warn("Target exactly one defending battle unit.");
+      return null;
+    }
+
+    const token = targets[0];
+    const unit = getBattleUnitFromToken(token);
+
+    if (!unit) {
+      ui.notifications.warn("Targeted token is not a battle unit.");
+      return null;
+    }
+
+    return token;
+  }
+
+  function getDistanceInSquares(tokenA, tokenB) {
+    const gridSize = canvas.scene.grid.size || 100;
+    const dx = Math.abs(Number(tokenA.document.x || 0) - Number(tokenB.document.x || 0)) / gridSize;
+    const dy = Math.abs(Number(tokenA.document.y || 0) - Number(tokenB.document.y || 0)) / gridSize;
+    return Math.max(dx, dy);
+  }
+
+  function areAllied(unitA, unitB) {
+    if (!unitA || !unitB) return false;
+
+    const allianceA = String(unitA.alliance || "").trim();
+    const allianceB = String(unitB.alliance || "").trim();
+    if (allianceA && allianceB) return allianceA === allianceB;
+
+    const teamA = String(unitA.team || "").trim();
+    const teamB = String(unitB.team || "").trim();
+    if (teamA && teamB) return teamA === teamB;
+
+    return false;
+  }
+
+  function areHostile(unitA, unitB) {
+    if (!unitA || !unitB) return false;
+
+    const allianceA = String(unitA.alliance || "").trim();
+    const allianceB = String(unitB.alliance || "").trim();
+    if (allianceA && allianceB) return allianceA !== allianceB;
+
+    const teamA = String(unitA.team || "").trim();
+    const teamB = String(unitB.team || "").trim();
+    if (teamA && teamB) return teamA !== teamB;
+
+    return true;
+  }
+
+  function isProjectileOrAreaAttack(attackerUnit, distance) {
+    if (distance <= 1) return false;
+    return isRangedCapableUnit(attackerUnit);
+  }
+
+  function isAmmoSpendingAttack(attackerUnit, distance) {
+    return distance > 1 && isArcherLikeUnit(attackerUnit);
+  }
+
+  function getAttackTypeLabel(attackerUnit, distance) {
+    if (distance <= 1) return "Adjacent / Melee";
+    if (isProjectileOrAreaAttack(attackerUnit, distance)) return "Ranged / Projectile";
+    return "Reach / Extended Melee";
+  }
+
+  function getEffectiveRange(attackerUnit, attackerTerrain) {
+    const baseRange = Number(attackerUnit.range || 1);
+    let effectiveRange = baseRange;
+    if (isRangedCapableUnit(attackerUnit)) effectiveRange += getTerrainValue(attackerTerrain, "rangeBonusFrom");
+    return Math.max(1, effectiveRange);
+  }
+
+  function terrainBlocksCharge(attackerTerrain, defenderTerrain) {
+    return Boolean(attackerTerrain?.chargeBlocked || defenderTerrain?.chargeBlocked);
+  }
+
+  function getAdjacentBattleTokens(targetToken) {
+    return (canvas.tokens?.placeables || []).filter((token) => {
+      if (token.id === targetToken.id) return false;
+      const unit = getBattleUnitFromToken(token);
+      if (!isActiveUnit(unit)) return false;
+      return getDistanceInSquares(token, targetToken) <= 1;
+    });
+  }
+
+  function getHostileAdjacentTokens(targetToken, targetUnit) {
+    return getAdjacentBattleTokens(targetToken).filter((token) => areHostile(getBattleUnitFromToken(token), targetUnit));
+  }
+
+  function getAlliedAdjacentTokens(targetToken, attackerUnit) {
+    return getAdjacentBattleTokens(targetToken).filter((token) => areAllied(getBattleUnitFromToken(token), attackerUnit));
+  }
+
+  function calculateFlanking(attackerToken, attackerUnit, defenderToken, defenderUnit, distance) {
+    if (distance > 1) {
+      return {
+        applies: false,
+        hostileAdjacentCount: 0,
+        engagedDirections: 0,
+        attackBonusDice: 0,
+        defencePenaltyDice: 0,
+        moraleExtraDice: 0,
+        reason: "No flanking: attacker is not adjacent."
+      };
+    }
+
+    const hostileAdjacentCount = getHostileAdjacentTokens(defenderToken, defenderUnit).length;
+
+    if (hostileAdjacentCount < 2) {
+      return {
+        applies: false,
+        hostileAdjacentCount,
+        engagedDirections: hostileAdjacentCount,
+        attackBonusDice: 0,
+        defencePenaltyDice: 0,
+        moraleExtraDice: 0,
+        reason: "No flanking: only one hostile unit is adjacent."
+      };
+    }
+
+    const engagedDirections = Math.min(4, hostileAdjacentCount);
+    const bonus = clamp(engagedDirections - 1, 1, 3);
+
+    return {
+      applies: true,
+      hostileAdjacentCount,
+      engagedDirections,
+      attackBonusDice: bonus,
+      defencePenaltyDice: bonus,
+      moraleExtraDice: bonus,
+      reason: "Flanking applies: 2+ hostile units are adjacent to the defender."
+    };
+  }
+
+  function rollD10s(numberOfDice) {
+    numberOfDice = Math.max(0, Math.floor(Number(numberOfDice || 0)));
+    const rolls = [];
+    let total = 0;
+
+    for (let i = 0; i < numberOfDice; i++) {
+      const result = Math.floor(Math.random() * 10) + 1;
+      rolls.push(result);
+      total += result;
+    }
+
+    return { rolls, total };
+  }
+
+  function formatRolls(rollData) {
+    if (!rollData || !Array.isArray(rollData.rolls)) return "";
+    return `${rollData.rolls.join(", ")} = ${rollData.total}`;
+  }
+
+  function formatNotes(notes) {
+    if (!notes || notes.length === 0) return "<p><strong>Notes:</strong> None</p>";
+    return "<p><strong>Notes:</strong></p><ul>" + notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("") + "</ul>";
+  }
+
+  async function saveCombatUnit(token, unit) {
+    await token.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, unit);
+    await updateTokenVisualsForCombat(token, unit);
+  }
+
+  async function updateTokenVisualsForCombat(token, unit) {
+    const hp = getHp(unit);
+    const maxHp = getMaxHp(unit);
+    const status = unit.status || "Active";
+
+    await token.document.update({
+      name: `${hp}/${maxHp} ${status}`,
+      alpha: status === "Routed" ? 0.4 : 1,
+      displayName: CONST.TOKEN_DISPLAY_MODES.ALWAYS
+    });
+
+    drawBattleHpBar(token);
+  }
+
+  function normaliseName(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function getRoutedPoolAnchor() {
+    const wanted = normaliseName(setting("routedPoolTokenName") || ROUTED_POOL_TOKEN_NAME_DEFAULT);
+    return (canvas.tokens?.placeables || []).find((token) => {
+      return [token.name, token.document?.name, token.actor?.name].some((name) => normaliseName(name) === wanted);
+    }) || null;
+  }
+
+  function routedPoolSlotIsOccupied(x, y, ignoreTokenId) {
+    const gridSize = canvas.scene.grid.size || 100;
+    return (canvas.tokens?.placeables || []).some((token) => {
+      if (token.id === ignoreTokenId || token.document.id === ignoreTokenId) return false;
+      const tokenX = Number(token.document.x || 0);
+      const tokenY = Number(token.document.y || 0);
+      return Math.abs(tokenX - x) < gridSize * 0.25 && Math.abs(tokenY - y) < gridSize * 0.25;
+    });
+  }
+
+  async function moveTokenToRoutedPool(token) {
+    const anchor = getRoutedPoolAnchor();
+
+    if (!anchor) {
+      return { moved: false, reason: `No Routed Pool token found. Expected: ${setting("routedPoolTokenName") || ROUTED_POOL_TOKEN_NAME_DEFAULT}` };
+    }
+
+    if (token.id === anchor.id) return { moved: false, reason: "Routed Pool anchor cannot move into itself." };
+
+    const gridSize = canvas.scene.grid.size || 100;
+    const anchorX = Number(anchor.document.x || 0);
+    const anchorY = Number(anchor.document.y || 0);
+
+    for (let slotIndex = 0; slotIndex < 200; slotIndex++) {
+      const column = slotIndex % 12;
+      const row = Math.floor(slotIndex / 12);
+      const x = anchorX + gridSize + column * gridSize;
+      const y = anchorY + row * gridSize;
+
+      if (routedPoolSlotIsOccupied(x, y, token.id)) continue;
+
+      await canvas.scene.updateEmbeddedDocuments(
+        "Token",
+        [{ _id: token.document.id, x, y }],
+        { animate: false, battleRoutedPoolMove: true, bypassBattleMovementWatcher: true, teleport: true }
+      );
+
+      return { moved: true, reason: "Teleported to Routed Pool.", x, y, slotIndex, anchorTokenName: anchor.document.name };
+    }
+
+    return { moved: false, reason: "Routed Pool found, but no empty slot was available." };
+  }
+
+  async function setRoutedByCombat(token, unit) {
+    unit.status = "Routed";
+    unit.hasMoved = true;
+    unit.hasAttacked = true;
+    unit.routedAt = new Date().toISOString();
+
+    await token.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, unit);
+    await updateTokenVisualsForCombat(token, unit);
+
+    try {
+      await token.toggleEffect("icons/svg/skull.svg", { active: true });
+    } catch (err) {
+      debug("Could not toggle skull effect", err);
+    }
+
+    const poolResult = await moveTokenToRoutedPool(token);
+    const latestUnit = getBattleUnitFromToken(token) || unit;
+    latestUnit.routedPool = {
+      moved: poolResult.moved,
+      reason: poolResult.reason,
+      x: poolResult.x ?? null,
+      y: poolResult.y ?? null,
+      slotIndex: poolResult.slotIndex ?? null,
+      time: new Date().toISOString()
+    };
+
+    await token.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, latestUnit);
+    await updateTokenVisualsForCombat(token, latestUnit);
+    return poolResult;
+  }
+
+  function createBattleLogEntry(entry) {
+    return { time: new Date().toISOString(), version: `${MODULE_TITLE} ${MODULE_VERSION}`, ...entry };
+  }
+
+  async function appendBattleLog(token, entry) {
+    const unit = getBattleUnitFromToken(token);
+    if (!unit) return;
+    const currentLog = Array.isArray(unit.battleLog) ? unit.battleLog : [];
+    currentLog.push(createBattleLogEntry(entry));
+    unit.battleLog = currentLog;
+    await token.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, unit);
+  }
+
+  async function askRallyDecision(token, unit, moraleRoll) {
+    if (!game.user.isGM) return false;
+    if (!setting("rallyPromptOnMoraleFailure")) return false;
+
+    const info = getCommanderCommandInfo(unit);
+    if (!info.found || !info.actor || info.remaining <= 0) return false;
+
+    return await Dialog.confirm({
+      title: "Rally Failed Morale?",
+      content:
+        `<p><strong>${escapeHtml(getUnitName(unit, token.name))}</strong> failed morale.</p>` +
+        `<p><strong>Morale Roll:</strong> ${escapeHtml(formatRolls(moraleRoll.roll))}</p>` +
+        `<p><strong>Threshold:</strong> under ${escapeHtml(moraleRoll.threshold)}</p>` +
+        `<p><strong>Commander:</strong> ${escapeHtml(info.commanderName)} has ${escapeHtml(info.remaining)} / ${escapeHtml(info.max)} command tokens.</p>` +
+        `<p>Spend 1 command token to rally and avoid routing?</p>`,
+      yes: () => true,
+      no: () => false,
+      defaultYes: false
+    });
+  }
+
+  async function spendCommanderCommandTokenForUnit(unit, reason) {
+    const info = getCommanderCommandInfo(unit);
+
+    if (!info.found || !info.actor) {
+      return { success: false, reason: `No commander linked for ${getUnitName(unit)}.`, ability: reason };
+    }
+
+    if (info.remaining <= 0) {
+      return { success: false, reason: `${info.commanderName} has no command tokens remaining.`, ability: reason };
+    }
+
+    const updated = foundry.utils.deepClone(info.data || {});
+    updated.commandTokensMax = info.max;
+    updated.commandTokensRemaining = info.remaining - 1;
+    updated.lastCommandTokenSpend = { time: new Date().toISOString(), reason, unitName: getUnitName(unit) };
+
+    await info.actor.setFlag(FLAG_SCOPE, COMMANDER_KEY, updated);
+
+    return { success: true, commanderName: info.commanderName, ability: reason, before: info.remaining, after: info.remaining - 1, max: info.max };
+  }
+
+  async function moraleCheckForCombat(token, unit, extraMoraleDice, reason) {
+    const hp = getHp(unit);
+    const maxHp = getMaxHp(unit);
+
+    if (unit.status === "Routed") return { checked: false, routed: true, reason: "Already routed." };
+
+    if (hp <= 0) {
+      const routedPool = await setRoutedByCombat(token, unit);
+      return { checked: false, routed: true, reason: "HP reached 0.", routedPool };
+    }
+
+    if (hp <= Math.floor(maxHp * 0.2)) {
+      const routedPool = await setRoutedByCombat(token, unit);
+      return { checked: false, routed: true, reason: "Auto-routed at 20% HP or lower.", routedPool };
+    }
+
+    if (hp > Math.floor(maxHp * 0.5)) {
+      await saveCombatUnit(token, unit);
+      return { checked: false, routed: false, reason: "Morale check not required." };
+    }
+
+    const moraleDice = 5 + Math.max(0, Number(extraMoraleDice || 0));
+    const roll = rollD10s(moraleDice);
+    const passed = roll.total < hp;
+
+    if (passed) {
+      await saveCombatUnit(token, unit);
+      return { checked: true, routed: false, passed: true, dice: moraleDice, roll, threshold: hp, reason: reason || "HP at or below 50%." };
+    }
+
+    const moralePreview = { checked: true, routed: true, passed: false, dice: moraleDice, roll, threshold: hp, reason: reason || "HP at or below 50%." };
+    const rally = await askRallyDecision(token, unit, moralePreview);
+
+    if (rally) {
+      const spend = await spendCommanderCommandTokenForUnit(unit, "Rally");
+      if (spend.success) {
+        unit.status = "Active";
+        unit.ralliedAt = new Date().toISOString();
+        unit.lastRally = spend;
+        await saveCombatUnit(token, unit);
+        return { ...moralePreview, routed: false, rallied: true, rallySpend: spend, reason: "Failed morale, but commander spent 1 command token to rally." };
+      }
+    }
+
+    const routedPool = await setRoutedByCombat(token, unit);
+    return { ...moralePreview, routed: true, routedPool };
+  }
+
+  function getCombatAbilityOptions(attackerUnit, defenderUnit, distance, effectiveRange, attackerTerrain, defenderTerrain) {
+    ensureAmmoDefaults(attackerUnit);
+    ensureAmmoDefaults(defenderUnit);
+
+    const attackerAbility = String(attackerUnit.ability || "").trim();
+    const defenderAbility = String(defenderUnit.ability || "").trim();
+    const blockedByTerrain = terrainBlocksCharge(attackerTerrain, defenderTerrain);
+
+    return {
+      useCharge: attackerAbility === "Charge" && distance <= effectiveRange && !blockedByTerrain && getCommanderCommandInfo(attackerUnit).remaining > 0,
+      useVolley: attackerAbility === "Volley" && distance > 1 && !attackerUnit.hasMoved && getCommanderCommandInfo(attackerUnit).remaining > 0 && Number(attackerUnit.ammoRemaining || 0) > 0,
+      defenderUsesFormUp: defenderAbility === "Form Up",
+      defenderUsesBrace: defenderAbility === "Brace" && attackerAbility === "Charge" && !blockedByTerrain && getCommanderCommandInfo(defenderUnit).remaining > 0,
+      chargeBlockedByTerrain: blockedByTerrain,
+      attackerCommandInfo: getCommanderCommandInfo(attackerUnit),
+      defenderCommandInfo: getCommanderCommandInfo(defenderUnit),
+      ammoText: getAmmoText(attackerUnit)
+    };
+  }
+
+  function sanitizeCombatOptions(requested, possible) {
+    requested = requested || {};
+    return {
+      useCharge: Boolean(possible.useCharge && requested.useCharge),
+      useVolley: Boolean(possible.useVolley && requested.useVolley),
+      defenderUsesFormUp: Boolean(possible.defenderUsesFormUp && requested.defenderUsesFormUp),
+      defenderUsesBrace: Boolean(possible.defenderUsesBrace && requested.defenderUsesBrace),
+      chargeBlockedByTerrain: Boolean(possible.chargeBlockedByTerrain),
+      commandSpendResults: [],
+      ammoSpent: 0
+    };
+  }
+
+  async function askCombatOptionsForModule(context) {
+    const possible = getCombatAbilityOptions(context.attackerUnit, context.defenderUnit, context.distance, context.effectiveRange, context.attackerTerrain, context.defenderTerrain);
+    const archerMeleeNote = isArcherLikeUnit(context.attackerUnit) && context.distance <= 1
+      ? '<p><strong>Archer Melee:</strong> Adjacent archer attack uses 2 attack dice.</p>'
+      : "";
+
+    return await new Promise((resolve) => {
+      new Dialog({
+        title: "Resolve Combat Options",
+        content:
+          '<form>' +
+            `<p><strong>Attacker:</strong> ${escapeHtml(getUnitName(context.attackerUnit, context.attackerToken.name))}</p>` +
+            `<p><strong>Defender:</strong> ${escapeHtml(getUnitName(context.defenderUnit, context.defenderToken.name))}</p>` +
+            `<p><strong>Distance:</strong> ${escapeHtml(context.distance)}</p>` +
+            `<p><strong>Effective Range:</strong> ${escapeHtml(context.effectiveRange)}</p>` +
+            `<p><strong>Attack Type:</strong> ${escapeHtml(getAttackTypeLabel(context.attackerUnit, context.distance))}</p>` +
+            archerMeleeNote +
+            '<hr>' +
+            `<p><strong>Attacker Command:</strong> ${escapeHtml(possible.attackerCommandInfo.text)}</p>` +
+            `<p><strong>Defender Command:</strong> ${escapeHtml(possible.defenderCommandInfo.text)}</p>` +
+            `<p><strong>Attacker Ammo:</strong> ${escapeHtml(possible.ammoText)}</p>` +
+            '<hr>' +
+            `<p><strong>Attacker Terrain:</strong> ${escapeHtml(getTerrainName(context.attackerTerrain))}</p>` +
+            `<p><strong>Defender Terrain:</strong> ${escapeHtml(getTerrainName(context.defenderTerrain))}</p>` +
+            `<p><strong>Charge Blocked By Terrain:</strong> ${possible.chargeBlockedByTerrain ? "Yes" : "No"}</p>` +
+            '<hr>' +
+            '<div class="form-group"><label>' +
+              `<input type="checkbox" name="useCharge" ${possible.useCharge ? "" : "disabled"} /> ` +
+              'Use Charge — costs 1 attacker command token</label></div>' +
+            '<div class="form-group"><label>' +
+              `<input type="checkbox" name="useVolley" ${possible.useVolley ? "" : "disabled"} /> ` +
+              'Use Volley — costs 1 attacker command token and 1 ammo</label></div>' +
+            '<div class="form-group"><label>' +
+              `<input type="checkbox" name="defenderUsesFormUp" ${possible.defenderUsesFormUp ? "" : "disabled"} /> ` +
+              'Defender uses Form Up if available</label></div>' +
+            '<div class="form-group"><label>' +
+              `<input type="checkbox" name="defenderUsesBrace" ${possible.defenderUsesBrace ? "" : "disabled"} /> ` +
+              'Defender uses Brace — costs 1 defender command token</label></div>' +
+            '<hr>' +
+            `<p><strong>Friendly-fire targets:</strong> ${escapeHtml(context.friendlyFireTargets.length)}</p>` +
+            '<p style="font-size:12px;opacity:0.85;">Friendly fire only happens for ranged/projectile attacks into melee.</p>' +
+          '</form>',
+        buttons: {
+          resolve: {
+            label: "Resolve Attack",
+            callback: (html) => {
+              const form = html[0].querySelector("form");
+              resolve(sanitizeCombatOptions({
+                useCharge: form.useCharge.checked,
+                useVolley: form.useVolley.checked,
+                defenderUsesFormUp: form.defenderUsesFormUp.checked,
+                defenderUsesBrace: form.defenderUsesBrace.checked
+              }, possible));
+            }
+          },
+          cancel: { label: "Cancel", callback: () => resolve(null) }
+        },
+        default: "resolve",
+        close: () => resolve(null)
+      }, { width: 680, height: 700, resizable: true }).render(true);
+    });
+  }
+
+  async function buildCombatContext(attackerToken, defenderToken, allowAlliedConfirm = true) {
+    const attackerUnit = foundry.utils.deepClone(getBattleUnitFromToken(attackerToken));
+    const defenderUnit = foundry.utils.deepClone(getBattleUnitFromToken(defenderToken));
+
+    if (!attackerUnit || !defenderUnit) throw new Error("Both attacker and defender must be battle units.");
+    if (!isActiveUnit(attackerUnit)) throw new Error(`${getUnitName(attackerUnit, attackerToken.name)} is not active.`);
+    if (!isActiveUnit(defenderUnit)) throw new Error(`${getUnitName(defenderUnit, defenderToken.name)} is not active.`);
+
+    ensureAmmoDefaults(attackerUnit);
+    ensureAmmoDefaults(defenderUnit);
+
+    const distance = getDistanceInSquares(attackerToken, defenderToken);
+    const attackerTerrain = getPrimaryTerrainUnderToken(attackerToken);
+    const defenderTerrain = getPrimaryTerrainUnderToken(defenderToken);
+    const baseRange = Number(attackerUnit.range || 1);
+    const effectiveRange = getEffectiveRange(attackerUnit, attackerTerrain);
+
+    if (distance > effectiveRange) {
+      throw new Error(`${getUnitName(attackerUnit, attackerToken.name)} is out of range. Distance ${distance}, effective range ${effectiveRange}.`);
+    }
+
+    if (allowAlliedConfirm && areAllied(attackerUnit, defenderUnit)) {
+      const proceed = await Dialog.confirm({
+        title: "Attack Allied Unit?",
+        content: "<p>The selected attacker and target appear to be allied.</p><p>Resolve anyway?</p>",
+        yes: () => true,
+        no: () => false,
+        defaultYes: false
+      });
+      if (!proceed) throw new Error("Combat cancelled: allied target.");
+    }
+
+    const projectileAttack = isProjectileOrAreaAttack(attackerUnit, distance);
+    const spendsAmmo = isAmmoSpendingAttack(attackerUnit, distance);
+
+    if (spendsAmmo && Number(attackerUnit.ammoRemaining || 0) <= 0) {
+      throw new Error(`${getUnitName(attackerUnit, attackerToken.name)} has no ammo remaining for ranged attacks. It can still fight adjacent enemies in melee.`);
+    }
+
+    const friendlyFireTargets = projectileAttack ? getAlliedAdjacentTokens(defenderToken, attackerUnit) : [];
+
+    return { attackerToken, defenderToken, attackerUnit, defenderUnit, distance, attackerTerrain, defenderTerrain, baseRange, effectiveRange, projectileAttack, spendsAmmo, friendlyFireTargets };
+  }
+
+  function calculateAttackDiceForCombat(attackerUnit, options, flanking, terrainContext, isFriendlyFire, projectileAttack) {
+    let dice = Number(attackerUnit.attack || 0);
+    const notes = [];
+    const attackerTerrain = terrainContext.attackerTerrain || CLEAR_TERRAIN;
+    const defenderTerrain = terrainContext.defenderTerrain || CLEAR_TERRAIN;
+
+    if (isArcherLikeUnit(attackerUnit) && !projectileAttack) {
+      dice = 2;
+      notes.push("Archer fighting adjacent / melee uses 2 attack dice");
+    }
+
+    if (options.useCharge) { dice += 2; notes.push("Charge +2 attack dice"); }
+    if (options.useVolley) { dice += 2; notes.push("Volley +2 attack dice"); }
+    if (!isFriendlyFire && flanking.attackBonusDice > 0) { dice += flanking.attackBonusDice; notes.push(`Flanking +${flanking.attackBonusDice} attack dice`); }
+
+    const attackBonusFrom = getTerrainValue(attackerTerrain, "attackBonusFrom");
+    if (attackBonusFrom !== 0) {
+      dice += attackBonusFrom;
+      notes.push(`${getTerrainName(attackerTerrain)} attack modifier ${attackBonusFrom > 0 ? "+" : ""}${attackBonusFrom} attack dice`);
+    }
+
+    const attackPenaltyInto = getTerrainValue(defenderTerrain, "attackPenaltyInto");
+    if (projectileAttack && attackPenaltyInto > 0) {
+      dice -= attackPenaltyInto;
+      notes.push(`Ranged attack into ${getTerrainName(defenderTerrain)} -${attackPenaltyInto} attack dice`);
+    }
+
+    return { dice: Math.max(0, dice), notes };
+  }
+
+  function calculateDefenceDiceForCombat(defenderUnit, options, flanking, isFriendlyFire, terrainContext, projectileAttack) {
+    let dice = Number(defenderUnit.defence || 0);
+    const notes = [];
+    const defenderTerrain = terrainContext.defenderTerrain || CLEAR_TERRAIN;
+
+    if (!isFriendlyFire && options.defenderUsesFormUp) { dice += 1; notes.push("Form Up +1 defence die"); }
+
+    const defenceBonus = getTerrainValue(defenderTerrain, "defenceBonus");
+    if (defenceBonus !== 0) { dice += defenceBonus; notes.push(`${getTerrainName(defenderTerrain)} ${defenceBonus > 0 ? "+" : ""}${defenceBonus} defence dice`); }
+
+    const rangedDefenceBonus = getTerrainValue(defenderTerrain, "rangedDefenceBonus");
+    if (projectileAttack && rangedDefenceBonus !== 0) { dice += rangedDefenceBonus; notes.push(`${getTerrainName(defenderTerrain)} ranged defence ${rangedDefenceBonus > 0 ? "+" : ""}${rangedDefenceBonus} defence dice`); }
+
+    if (!isFriendlyFire && flanking.defencePenaltyDice > 0) { dice -= flanking.defencePenaltyDice; notes.push(`Flanking -${flanking.defencePenaltyDice} defence dice`); }
+
+    return { dice: Math.max(0, dice), notes };
+  }
+
+  async function applyDamageAndMoraleForCombat(targetToken, damage, moraleExtraDice, moraleReason) {
+    const unit = getBattleUnitFromToken(targetToken);
+    if (!unit) return null;
+
+    const oldHp = getHp(unit);
+    const maxHp = getMaxHp(unit);
+    const newHp = clamp(oldHp - damage, 0, maxHp);
+    unit.health.value = newHp;
+
+    await targetToken.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, unit);
+    const morale = await moraleCheckForCombat(targetToken, unit, moraleExtraDice, moraleReason);
+    const updatedUnit = getBattleUnitFromToken(targetToken);
+    await updateTokenVisualsForCombat(targetToken, updatedUnit);
+
+    return { oldHp, newHp, maxHp, damage, morale, unit: updatedUnit };
+  }
+
+  async function resolveSingleAttackForCombat(params) {
+    const terrainContext = { attackerTerrain: params.attackerTerrain || CLEAR_TERRAIN, defenderTerrain: params.defenderTerrain || CLEAR_TERRAIN };
+    const noFlanking = { attackBonusDice: 0, defencePenaltyDice: 0, moraleExtraDice: 0 };
+
+    const attackCalc = calculateAttackDiceForCombat(params.attackerUnit, params.options, params.isFriendlyFire ? noFlanking : params.flanking, terrainContext, params.isFriendlyFire, params.projectileAttack);
+    const defenceCalc = calculateDefenceDiceForCombat(params.defenderUnit, params.options, params.isFriendlyFire ? noFlanking : params.flanking, params.isFriendlyFire, terrainContext, params.projectileAttack);
+    const attackRoll = rollD10s(attackCalc.dice);
+    const defenceRoll = rollD10s(defenceCalc.dice);
+    const damage = Math.max(0, attackRoll.total - defenceRoll.total);
+
+    const damageResult = await applyDamageAndMoraleForCombat(
+      params.defenderToken,
+      damage,
+      params.isFriendlyFire ? 0 : params.flanking.moraleExtraDice,
+      params.isFriendlyFire ? "Friendly fire damage." : "Damage, terrain, and melee engagement pressure."
+    );
+
+    await appendBattleLog(params.attackerToken, {
+      type: params.isFriendlyFire ? "Friendly Fire Attack Made" : "Attack Made",
+      target: getUnitName(params.defenderUnit, params.defenderToken.name),
+      targetTokenId: params.defenderToken.id,
+      attackDice: attackCalc.dice,
+      attackRolls: attackRoll.rolls,
+      attackTotal: attackRoll.total,
+      defenceDice: defenceCalc.dice,
+      defenceRolls: defenceRoll.rolls,
+      defenceTotal: defenceRoll.total,
+      damage,
+      attackNotes: attackCalc.notes,
+      defenceNotes: defenceCalc.notes
+    });
+
+    await appendBattleLog(params.defenderToken, {
+      type: params.isFriendlyFire ? "Friendly Fire Received" : "Attack Received",
+      attacker: getUnitName(params.attackerUnit, params.attackerToken.name),
+      attackerTokenId: params.attackerToken.id,
+      attackDice: attackCalc.dice,
+      attackRolls: attackRoll.rolls,
+      attackTotal: attackRoll.total,
+      defenceDice: defenceCalc.dice,
+      defenceRolls: defenceRoll.rolls,
+      defenceTotal: defenceRoll.total,
+      damage,
+      oldHp: damageResult?.oldHp,
+      newHp: damageResult?.newHp,
+      morale: damageResult?.morale,
+      attackNotes: attackCalc.notes,
+      defenceNotes: defenceCalc.notes
+    });
+
+    return { ...params, attackCalc, defenceCalc, attackRoll, defenceRoll, damage, damageResult };
+  }
+
+  async function resolveBraceCounterattackForCombat(attackerToken, attackerUnit, defenderToken, defenderUnit, attackerTerrain, defenderTerrain) {
+    const options = { useCharge: false, useVolley: false, defenderUsesFormUp: false, defenderUsesBrace: false };
+    const flanking = { attackBonusDice: 0, defencePenaltyDice: 0, moraleExtraDice: 0 };
+    return resolveSingleAttackForCombat({
+      attackerToken: defenderToken,
+      defenderToken: attackerToken,
+      attackerUnit: defenderUnit,
+      defenderUnit: attackerUnit,
+      options,
+      flanking,
+      isFriendlyFire: false,
+      projectileAttack: false,
+      attackerTerrain: defenderTerrain,
+      defenderTerrain: attackerTerrain
+    });
+  }
+
+  function formatMoraleHtml(morale) {
+    if (!morale) return "<p><strong>Morale:</strong> None</p>";
+    let html = `<p><strong>Morale:</strong> ${escapeHtml(morale.reason || "")}</p>`;
+    if (morale.checked) {
+      html += `<p><strong>Morale Roll:</strong> ${escapeHtml(formatRolls(morale.roll))}</p>`;
+      html += `<p><strong>Needed:</strong> under ${escapeHtml(morale.threshold)}</p>`;
+      html += `<p><strong>Result:</strong> ${morale.routed ? "Routed" : morale.rallied ? "Rallied" : "Passed"}</p>`;
+    }
+    if (morale.rallySpend) {
+      html += `<p><strong>Rally:</strong> ${escapeHtml(morale.rallySpend.commanderName)} spent 1 command token — ${escapeHtml(morale.rallySpend.after)} / ${escapeHtml(morale.rallySpend.max)} remaining.</p>`;
+    }
+    if (morale.routedPool) html += `<p><strong>Routed Pool:</strong> ${escapeHtml(morale.routedPool.reason)}</p>`;
+    return html;
+  }
+
+  function formatAttackResultHtml(result, title) {
+    if (!result) return "";
+    const damage = result.damageResult || {};
+    return `
+      <h2>${escapeHtml(title)}</h2>
+      <p><strong>Target:</strong> ${escapeHtml(getUnitName(result.defenderUnit, result.defenderToken.name))}</p>
+      <p><strong>Attack Dice:</strong> ${escapeHtml(result.attackCalc.dice)}</p>
+      <p><strong>Attack Roll:</strong> ${escapeHtml(formatRolls(result.attackRoll))}</p>
+      <p><strong>Defence Dice:</strong> ${escapeHtml(result.defenceCalc.dice)}</p>
+      <p><strong>Defence Roll:</strong> ${escapeHtml(formatRolls(result.defenceRoll))}</p>
+      <p><strong>Damage:</strong> ${escapeHtml(result.damage)}</p>
+      <p><strong>HP:</strong> ${escapeHtml(damage.oldHp)} → ${escapeHtml(damage.newHp)} / ${escapeHtml(damage.maxHp)}</p>
+      ${formatNotes(result.attackCalc.notes)}
+      ${formatNotes(result.defenceCalc.notes)}
+      ${formatMoraleHtml(damage.morale)}
+    `;
+  }
+
+  function formatCommandSpendHtml(results) {
+    if (!results || results.length === 0) return "<p><strong>Command Tokens Spent:</strong> None</p>";
+    return "<p><strong>Command Tokens Spent:</strong></p><ul>" + results.map((result) => {
+      return `<li>${escapeHtml(result.commanderName)} spent 1 token for ${escapeHtml(result.ability)} — ${escapeHtml(result.after)} / ${escapeHtml(result.max)} remaining</li>`;
+    }).join("") + "</ul>";
+  }
+
+  function formatBraceHtml(braceResult, attackerToken) {
+    if (!braceResult) return "<h2>Brace Counterattack</h2><p>No Brace counterattack occurred.</p>";
+    return formatAttackResultHtml(braceResult, "Brace Counterattack") + `<p><strong>Counterattack Target:</strong> ${escapeHtml(attackerToken.name)}</p>`;
+  }
+
+  async function resolveCombatByTokenIds(attackerId, defenderId, requestedOptions = {}, requesterName = game.user.name) {
+    if (!game.user.isGM) throw new Error("Only the active GM can apply combat results.");
+
+    const attackerToken = getTokenById(attackerId);
+    const defenderToken = getTokenById(defenderId);
+    if (!attackerToken || !defenderToken) throw new Error("Could not find attacker or defender token on this scene.");
+
+    const context = await buildCombatContext(attackerToken, defenderToken, false);
+    const possible = getCombatAbilityOptions(context.attackerUnit, context.defenderUnit, context.distance, context.effectiveRange, context.attackerTerrain, context.defenderTerrain);
+    const options = sanitizeCombatOptions(requestedOptions, possible);
+
+    const commandSpendResults = [];
+    for (const [enabled, unit, reason] of [
+      [options.useCharge, context.attackerUnit, "Charge"],
+      [options.useVolley, context.attackerUnit, "Volley"],
+      [options.defenderUsesBrace, context.defenderUnit, "Brace"]
+    ]) {
+      if (!enabled) continue;
+      const spend = await spendCommanderCommandTokenForUnit(unit, reason);
+      if (!spend.success) throw new Error(spend.reason);
+      commandSpendResults.push(spend);
+    }
+
+    options.commandSpendResults = commandSpendResults;
+    options.ammoSpent = context.spendsAmmo ? 1 : 0;
+
+    const flanking = calculateFlanking(context.attackerToken, context.attackerUnit, context.defenderToken, context.defenderUnit, context.distance);
+
+    const mainResult = await resolveSingleAttackForCombat({
+      attackerToken: context.attackerToken,
+      defenderToken: context.defenderToken,
+      attackerUnit: context.attackerUnit,
+      defenderUnit: context.defenderUnit,
+      options,
+      flanking,
+      isFriendlyFire: false,
+      projectileAttack: context.projectileAttack,
+      attackerTerrain: context.attackerTerrain,
+      defenderTerrain: context.defenderTerrain
+    });
+
+    let braceResult = null;
+    if (options.defenderUsesBrace && options.useCharge && isActiveUnit(getBattleUnitFromToken(context.defenderToken)) && isActiveUnit(getBattleUnitFromToken(context.attackerToken))) {
+      braceResult = await resolveBraceCounterattackForCombat(
+        context.attackerToken,
+        getBattleUnitFromToken(context.attackerToken),
+        context.defenderToken,
+        getBattleUnitFromToken(context.defenderToken),
+        context.attackerTerrain,
+        context.defenderTerrain
+      );
+    }
+
+    const friendlyFireResults = [];
+    for (const friendlyToken of context.friendlyFireTargets) {
+      const friendlyUnit = getBattleUnitFromToken(friendlyToken);
+      if (!isActiveUnit(friendlyUnit)) continue;
+      const friendlyTerrain = getPrimaryTerrainUnderToken(friendlyToken);
+      const result = await resolveSingleAttackForCombat({
+        attackerToken: context.attackerToken,
+        defenderToken: friendlyToken,
+        attackerUnit: getBattleUnitFromToken(context.attackerToken),
+        defenderUnit: friendlyUnit,
+        options,
+        flanking: { attackBonusDice: 0, defencePenaltyDice: 0, moraleExtraDice: 0 },
+        isFriendlyFire: true,
+        projectileAttack: true,
+        attackerTerrain: context.attackerTerrain,
+        defenderTerrain: friendlyTerrain
+      });
+      friendlyFireResults.push(result);
+    }
+
+    const latestAttackerUnit = getBattleUnitFromToken(context.attackerToken);
+    ensureAmmoDefaults(latestAttackerUnit);
+    latestAttackerUnit.hasAttacked = true;
+    if (context.spendsAmmo) latestAttackerUnit.ammoRemaining = Math.max(0, Number(latestAttackerUnit.ammoRemaining || 0) - 1);
+    if (options.useCharge || options.useVolley) latestAttackerUnit.hasMoved = true;
+    await saveCombatUnit(context.attackerToken, latestAttackerUnit);
+
+    let friendlyFireHtml = "";
+    if (friendlyFireResults.length > 0) {
+      friendlyFireHtml = "<h2>Friendly Fire</h2><p><strong>Rule:</strong> Ranged/projectile attack into melee. Every allied unit adjacent to the target was also attacked.</p>" +
+        friendlyFireResults.map((result, index) => formatAttackResultHtml(result, `Friendly Fire Target ${index + 1}`)).join("");
+    } else if (context.projectileAttack) {
+      friendlyFireHtml = "<h2>Friendly Fire</h2><p>No allied units were adjacent to the target, so no friendly fire occurred.</p>";
+    }
+
+    const flankingHtml =
+      "<h2>Flanking / Engagement</h2>" +
+      `<p><strong>Attack distance:</strong> ${escapeHtml(context.distance)}</p>` +
+      `<p><strong>Attack type:</strong> ${escapeHtml(getAttackTypeLabel(context.attackerUnit, context.distance))}</p>` +
+      `<p><strong>Flanking applies:</strong> ${flanking.applies ? "Yes" : "No"}</p>` +
+      `<p><strong>Reason:</strong> ${escapeHtml(flanking.reason)}</p>` +
+      `<p><strong>Hostile adjacent units around defender:</strong> ${escapeHtml(flanking.hostileAdjacentCount)}</p>` +
+      `<p><strong>Attack bonus dice:</strong> +${escapeHtml(flanking.attackBonusDice)}</p>` +
+      `<p><strong>Defence penalty dice:</strong> -${escapeHtml(flanking.defencePenaltyDice)}</p>`;
+
+    const terrainHtml =
+      "<h2>Terrain</h2>" +
+      `<p><strong>Attacker Terrain:</strong> ${escapeHtml(getTerrainName(context.attackerTerrain))}</p>` +
+      `<p><strong>Defender Terrain:</strong> ${escapeHtml(getTerrainName(context.defenderTerrain))}</p>` +
+      `<p><strong>Base Range:</strong> ${escapeHtml(context.baseRange)}</p>` +
+      `<p><strong>Effective Range:</strong> ${escapeHtml(context.effectiveRange)}</p>` +
+      `<p><strong>Charge Blocked By Terrain:</strong> ${terrainBlocksCharge(context.attackerTerrain, context.defenderTerrain) ? "Yes" : "No"}</p>`;
+
+    const commandAndAmmoHtml =
+      "<h2>Command / Ammo</h2>" +
+      formatCommandSpendHtml(options.commandSpendResults) +
+      `<p><strong>Ammo Spent:</strong> ${escapeHtml(options.ammoSpent || 0)}</p>` +
+      `<p><strong>Attacker Ammo Remaining:</strong> ${escapeHtml(getAmmoText(getBattleUnitFromToken(context.attackerToken)))}</p>`;
+
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Battle Army Tools" }),
+      content:
+        `<h1>${escapeHtml(MODULE_TITLE)} ${escapeHtml(MODULE_VERSION)} Combat</h1>` +
+        `<p><strong>Requested by:</strong> ${escapeHtml(requesterName || game.user.name)}</p>` +
+        "<h2>Main Attack</h2>" +
+        `<p><strong>Attacker:</strong> ${escapeHtml(getUnitName(context.attackerUnit, context.attackerToken.name))}</p>` +
+        `<p><strong>Defender:</strong> ${escapeHtml(getUnitName(context.defenderUnit, context.defenderToken.name))}</p>` +
+        `<p><strong>Range:</strong> ${escapeHtml(context.distance)} / ${escapeHtml(context.effectiveRange)}</p>` +
+        `<p><strong>Attack Type:</strong> ${escapeHtml(getAttackTypeLabel(context.attackerUnit, context.distance))}</p>` +
+        `<p><strong>Charge:</strong> ${options.useCharge ? "Yes" : "No"}</p>` +
+        `<p><strong>Volley:</strong> ${options.useVolley ? "Yes" : "No"}</p>` +
+        `<p><strong>Form Up:</strong> ${options.defenderUsesFormUp ? "Yes" : "No"}</p>` +
+        `<p><strong>Brace:</strong> ${options.defenderUsesBrace ? "Yes" : "No"}</p>` +
+        commandAndAmmoHtml +
+        terrainHtml +
+        formatAttackResultHtml(mainResult, "Main Target Result") +
+        flankingHtml +
+        formatBraceHtml(braceResult, context.attackerToken) +
+        friendlyFireHtml
+    });
+
+    refreshAllHpBars();
+    renderTurnHud();
+    return { success: true, attacker: context.attackerToken.name, defender: context.defenderToken.name };
+  }
+
+  function getActiveGmUser() {
+    return game.users.find((user) => user.isGM && user.active) || null;
+  }
+
+  async function requestCombatResolutionFromGm(attackerId, defenderId, options) {
+    const gm = getActiveGmUser();
+    if (!gm) throw new Error("No active GM is connected to apply combat results.");
+
+    game.socket.emit(`module.${MODULE_ID}`, {
+      type: SOCKET_TYPE_COMBAT_REQUEST,
+      gmUserId: gm.id,
+      requesterUserId: game.user.id,
+      requesterName: game.user.name,
+      sceneId: canvas.scene.id,
+      attackerId,
+      defenderId,
+      options
+    });
+
+    ui.notifications.info("Combat request sent to the active GM for resolution.");
+  }
+
+  async function resolveCombatFromSelection() {
+    try {
+      const attackerToken = getControlledBattleToken();
+      if (!attackerToken) return;
+      const defenderToken = getSingleTargetedBattleToken();
+      if (!defenderToken) return;
+
+      const context = await buildCombatContext(attackerToken, defenderToken, true);
+      const options = await askCombatOptionsForModule(context);
+      if (!options) {
+        ui.notifications.warn("Combat cancelled.");
+        return;
+      }
+
+      if (game.user.isGM) {
+        await resolveCombatByTokenIds(attackerToken.id, defenderToken.id, options, game.user.name);
+      } else {
+        if (!setting("allowPlayerCombatRequests")) {
+          ui.notifications.warn("Player combat requests are disabled in module settings.");
+          return;
+        }
+        await requestCombatResolutionFromGm(attackerToken.id, defenderToken.id, options);
+      }
+    } catch (err) {
+      console.error(err);
+      ui.notifications.error(err.message || "Could not resolve combat.");
+    }
+  }
+
+  async function handleCombatSocketMessage(payload) {
+    if (!payload || payload.type !== SOCKET_TYPE_COMBAT_REQUEST) return;
+    if (!game.user.isGM) return;
+    if (payload.gmUserId && payload.gmUserId !== game.user.id) return;
+    if (!canvas?.scene || payload.sceneId !== canvas.scene.id) {
+      ui.notifications.warn(`Combat request from ${payload.requesterName || "player"} ignored because the GM is not on the same scene.`);
+      return;
+    }
+
+    try {
+      await resolveCombatByTokenIds(payload.attackerId, payload.defenderId, payload.options, payload.requesterName);
+      ui.notifications.info(`Resolved combat request from ${payload.requesterName || "player"}.`);
+    } catch (err) {
+      console.error(err);
+      ui.notifications.error(`Combat request failed: ${err.message || err}`);
+    }
+  }
+
+  function registerSocketHandler() {
+    if (state.socketRegistered) return;
+    game.socket.on(`module.${MODULE_ID}`, handleCombatSocketMessage);
+    state.socketRegistered = true;
+  }
+
+  async function resetSelectedMovement() {
+    const tokens = (canvas.tokens?.controlled || []).filter((token) => Boolean(getBattleUnitFromToken(token)));
+    if (!tokens.length) {
+      ui.notifications.warn("Select one or more battle units to reset movement.");
+      return;
+    }
+
+    for (const token of tokens) {
+      const unit = getBattleUnitFromToken(token);
+      unit.hasMoved = false;
+      unit.movementUsed = 0;
+      unit.remainingMovement = Number(unit.movement || 0);
+      unit.movementBonusAllowance = 0;
+      delete unit.movementOrigin;
+      delete unit.lastMovement;
+      await token.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, unit);
+    }
+
+    ui.notifications.info(`Reset movement for ${tokens.length} selected battle unit(s).`);
+  }
+
+  async function resetSelectedAmmo() {
+    const tokens = (canvas.tokens?.controlled || []).filter((token) => Boolean(getBattleUnitFromToken(token)));
+    if (!tokens.length) {
+      ui.notifications.warn("Select one or more battle units to reset ammo.");
+      return;
+    }
+
+    let count = 0;
+    for (const token of tokens) {
+      const unit = getBattleUnitFromToken(token);
+      if (!isArcherLikeUnit(unit)) continue;
+      ensureAmmoDefaults(unit);
+      unit.ammoRemaining = Number(unit.ammoMax || 5);
+      await token.document.setFlag(FLAG_SCOPE, BATTLE_UNIT_KEY, unit);
+      count++;
+    }
+
+    ui.notifications.info(`Reset ammo for ${count} selected ranged unit(s).`);
+  }
+
+  async function resetCurrentSideCommandTokens() {
+    if (!game.user.isGM) {
+      ui.notifications.warn("Only the GM can reset command tokens.");
+      return;
+    }
+
+    const turnState = getCurrentTurnState();
+    const side = getCurrentSide(turnState) || turnState?.currentSide;
+    if (!side) {
+      ui.notifications.warn("No current side found in battle turn state.");
+      return;
+    }
+
+    const mode = turnState?.mode || "Team";
+    let count = 0;
+
+    for (const entry of getCommanderEntries()) {
+      if (!commanderMatchesSide(entry, side, mode)) continue;
+      const data = foundry.utils.deepClone(entry.data || {});
+      const max = Math.max(0, Number(data.commandTokensMax ?? data.commandTokensPerTurn ?? data.commandTokens ?? 1));
+      data.commandTokensMax = max;
+      data.commandTokensRemaining = max;
+      data.lastCommandTokenReset = { time: new Date().toISOString(), source: `${MODULE_TITLE} ${MODULE_VERSION}`, side, mode };
+      await entry.actor.setFlag(FLAG_SCOPE, COMMANDER_KEY, data);
+      count++;
+    }
+
+    renderTurnHud();
+    ui.notifications.info(`Reset command tokens for ${count} commander(s) on ${side}.`);
+  }
+
+  function getActionPanelElement() {
+    let el = document.getElementById(PANEL_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = PANEL_ID;
+      el.className = "battle-army-tools-action-panel";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function renderActionPanel() {
+    const el = getActionPanelElement();
+
+    if (!setting("enableActionPanel") || !canvas?.scene) {
+      el.style.display = "none";
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="bat-panel-title">Battle Actions</div>
+      <button type="button" data-action="resolve">Resolve Combat</button>
+      <button type="button" data-action="resetMove">Reset Selected Move</button>
+      <button type="button" data-action="resetAmmo">Reset Selected Ammo</button>
+      ${game.user.isGM ? '<button type="button" data-action="resetCmd">Reset Side Command</button>' : ''}
+      <div class="bat-panel-help">Select attacker. Target defender. Press Resolve Combat.</div>
+    `;
+
+    el.querySelector('[data-action="resolve"]')?.addEventListener("click", resolveCombatFromSelection);
+    el.querySelector('[data-action="resetMove"]')?.addEventListener("click", resetSelectedMovement);
+    el.querySelector('[data-action="resetAmmo"]')?.addEventListener("click", resetSelectedAmmo);
+    el.querySelector('[data-action="resetCmd"]')?.addEventListener("click", resetCurrentSideCommandTokens);
+
+    el.style.display = "block";
+    state.panel.active = true;
+  }
+
+  function startBattlePanel() {
+    renderActionPanel();
+  }
+
+  function stopBattlePanel() {
+    const el = document.getElementById(PANEL_ID);
+    if (el) el.style.display = "none";
+    state.panel.active = false;
   }
 
   /* ----------------------------------------------------------------------- */
@@ -1256,11 +2367,13 @@
     stopMovementWatcher(false);
     stopHoverTooltip();
     stopHpBars();
+    stopBattlePanel();
 
     startMovementWatcher();
     startHoverTooltip();
     startHpBars();
     renderTurnHud();
+    startBattlePanel();
   }
 
   function exposeApi() {
@@ -1273,6 +2386,10 @@
       refreshHpBars: refreshAllHpBars,
       renderTurnHud,
       hideTooltip,
+      resolveCombatFromSelection,
+      resetSelectedMovement,
+      resetSelectedAmmo,
+      resetCurrentSideCommandTokens,
       utilities: {
         getBattleUnitFromToken,
         getBattleUnitFromDocument,
