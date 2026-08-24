@@ -1,8 +1,8 @@
-# Battle Army Tools v0.2.4
+# Battle Army Tools v0.2.5
 
 Army-scale battle helpers for Foundry VTT.
 
-## Included in v0.2.4
+## Included in v0.2.5
 
 - Left-docked hover tooltip by default
   - HP/status, attack, defence, range, movement, ammo, command, formation, terrain bonuses
@@ -63,7 +63,7 @@ https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.js
 
 For GitHub release assets, upload this ZIP as:
 
-battle-army-tools-v0.2.4.zip
+battle-army-tools-v0.2.5.zip
 
 
 ## v0.2.2 hotfix
@@ -84,8 +84,14 @@ battle-army-tools-v0.2.4.zip
 - Battle Turn HUD and Battle Actions panel are positioned on the left side so they do not obscure chat.
 
 
-## v0.2.4 Hotfix
+## v0.2.5 Hotfix
 
 - Adds active-turn movement enforcement.
 - Players cannot move units outside the current tracker side/commander/alliance/formation.
 - GM movement override remains available through module settings for setup and corrections.
+
+
+## v0.2.5
+
+- Suppresses Battle Army Tools panels, HUD, tooltip, HP bars, and movement watcher on `Crown of Ashes` and `Crown of Ashes (Copy)`.
+- Supports the scene flag `world.battleArmyToolsSceneMode`: `battle` forces battle tools on; `world`, `overview`, or `off` disables them.

@@ -3,7 +3,7 @@
 
   const MODULE_ID = "battle-army-tools";
   const MODULE_TITLE = "Battle Army Tools";
-  const MODULE_VERSION = "0.2.4";
+  const MODULE_VERSION = "0.2.5";
 
   const FLAG_SCOPE = "world";
   const BATTLE_UNIT_KEY = "battleUnit";
@@ -18,6 +18,22 @@
   const TOOLTIP_ID = "battle-army-tools-tooltip";
   const HUD_ID = "battle-army-tools-turn-hud";
   const PANEL_ID = "battle-army-tools-action-panel";
+
+  const DISABLED_SCENE_NAMES = [
+    "Crown of Ashes",
+    "Crown of Ashes (Copy)"
+  ];
+
+  function isBattleToolsDisabledForScene(scene = canvas?.scene) {
+    if (!scene) return false;
+
+    const explicitMode = scene.getFlag?.(FLAG_SCOPE, "battleArmyToolsSceneMode");
+
+    if (explicitMode === "battle") return false;
+    if (explicitMode === "world" || explicitMode === "overview" || explicitMode === "off") return true;
+
+    return DISABLED_SCENE_NAMES.includes(scene.name);
+  }
 
   const CLEAR_TERRAIN = {
     key: "clear",
@@ -227,6 +243,7 @@
 
   Hooks.on("canvasReady", () => {
     setTimeout(() => {
+      restartEnabledFeatures();
       refreshAllHpBars();
       renderTurnHud();
     }, 250);
@@ -1310,7 +1327,7 @@
   function renderTurnHud() {
     const el = getHudElement();
 
-    if (!setting("enableTurnHud") || !canvas?.scene) {
+    if (!setting("enableTurnHud") || !canvas?.scene || isBattleToolsDisabledForScene()) {
       el.style.display = "none";
       return;
     }
@@ -2523,7 +2540,7 @@
   function renderActionPanel() {
     const el = getActionPanelElement();
 
-    if (!setting("enableActionPanel") || !canvas?.scene) {
+    if (!setting("enableActionPanel") || !canvas?.scene || isBattleToolsDisabledForScene()) {
       el.style.display = "none";
       return;
     }
@@ -2567,6 +2584,12 @@
     stopHoverTooltip();
     stopHpBars();
     stopBattlePanel();
+
+    if (isBattleToolsDisabledForScene()) {
+      removeTurnHud();
+      hideTooltip();
+      return;
+    }
 
     startMovementWatcher();
     startHoverTooltip();

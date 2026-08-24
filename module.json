@@ -1,8 +1,8 @@
 {
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
-  "description": "Army-scale battle helper tools: left-docked hover tooltip, left-side turn HUD/action panel, movement watcher with active-turn enforcement, custom HP bars, action panel, and player-safe GM-applied combat resolution. v0.2.4 adds active-turn movement enforcement.",
-  "version": "0.2.4",
+  "description": "Army-scale battle helper tools. v0.2.5 automatically suppresses Battle Army Tools UI/watchers on Crown overview map scenes.",
+  "version": "0.2.5",
   "authors": [
     {
       "name": "Thom Moore"
@@ -19,6 +19,6 @@
     "styles/battle-army-tools.css"
   ],
   "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.2.4/battle-army-tools-v0.2.4.zip",
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.2.5/battle-army-tools-v0.2.5.zip",
   "socket": true
 }
