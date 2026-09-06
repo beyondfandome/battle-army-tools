@@ -1,25 +1,24 @@
 {
-  "id": "crown-overview-tools",
-  "title": "Crown Overview Tools",
-  "description": "Scene-gated strategic overview map tools for Crown of Ashes. v0.4.6 polishes navies, siege GM resolution, player dismissal, military upkeep, and round clock/economy ledger controls.",
-  "version": "0.4.6",
+  "id": "battle-army-tools",
+  "title": "Battle Army Tools",
+  "description": "Army-scale battle helper tools. v0.2.5 automatically suppresses Battle Army Tools UI/watchers on Crown overview map scenes.",
+  "version": "0.2.5",
   "authors": [
     {
-      "name": "Beyond Fandome"
+      "name": "Thom Moore"
     }
   ],
   "compatibility": {
-    "minimum": "13",
+    "minimum": "12",
     "verified": "14"
   },
   "scripts": [
-    "scripts/crown-overview-tools.js"
+    "scripts/battle-army-tools.js"
   ],
   "styles": [
-    "styles/crown-overview-tools.css"
+    "styles/battle-army-tools.css"
   ],
-  "url": "https://github.com/beyondfandome/crown-overview-tools",
-  "manifest": "https://raw.githubusercontent.com/beyondfandome/crown-overview-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/crown-overview-tools/releases/download/v0.4.6/crown-overview-tools-v0.4.6.zip",
+  "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.2.5/battle-army-tools-v0.2.5.zip",
   "socket": true
 }
