@@ -1,97 +1,66 @@
-# Battle Army Tools v0.2.5
+# Crown Overview Tools v0.4.6
 
-Army-scale battle helpers for Foundry VTT.
+Scene-gated strategic overview tools for the Crown of Ashes Foundry world map.
 
-## Included in v0.2.5
+## v0.4.6
 
-- Left-docked hover tooltip by default
-  - HP/status, attack, defence, range, movement, ammo, command, formation, terrain bonuses
-- Turn HUD
-  - round
-  - current side/team/alliance from the battle turn tracker scene flag
-  - commander command tokens for the current side
-- Battle Action Panel
-  - Resolve Combat
-  - Reset Selected Move
-  - Reset Selected Ammo
-  - Reset Side Command, GM only
-- Player combat requests
-  - players select their attacker and target a defender
-  - the player chooses combat options
-  - the active GM client applies the result through the module socket
-- Active-turn combat and movement enforcement
-  - player attacks are blocked unless the attacker matches the current turn tracker team/alliance/commander/formation
-  - player movement is blocked unless the moved unit matches the current turn tracker team/alliance/commander/formation
-  - GM direct attacks and movement can still override for corrections/testing when enabled in settings
-- Combat resolver
-  - attack vs defence d10 pools
-  - terrain modifiers
-  - Charge / Volley / Form Up / Brace
-  - ammo spending
-  - flanking / engagement pressure
-  - morale checks
-  - optional GM rally prompt on failed morale
-  - routed-pool teleport when a unit routes
-  - friendly fire for ranged/projectile attacks into melee
-- Movement watcher
-  - cumulative movement tracking
-  - terrain movement costs
-  - routed-unit movement blocking
-  - occupied-square blocking
-  - routed-pool teleport bypass
-- Custom HP bars
+Hotfix and systems polish for navies, sieges, strategic action locks, upkeep, and the campaign clock.
 
-## Player combat workflow
+### Navies / fleets
 
-1. Player selects one attacking battle unit.
-2. Player targets one defending battle unit.
-3. Player clicks `Resolve Combat` in the Battle Actions panel.
-4. Player chooses Charge / Volley / Form Up / Brace options if available.
-5. The active GM client applies the combat result and posts it to chat.
+- Adds stricter Summon Navy rules.
+- A navy can only be summoned from an active Port tile.
+- The Summon Navy dialog now shows the linked sea tiles available from that port.
+- The player/GM chooses the starting sea tile when launching the navy.
+- The fleet launches immediately into that sea tile.
+- The linked character is moved/embarked into the same sea tile.
+- The character and the new fleet are locked for the turn after launching.
+- Fleet movement remains sea/port based.
+- Fleets can still carry their linked character when moving.
 
-The GM should be logged into the same scene while players test combat.
+### Armies / navies dismissal
 
-## Routed Pool
+- Players can now dismiss their own army or navy.
+- Non-GM dismissals route through the active GM client by socket.
+- Dismissed forces are removed from the map and stop future upkeep.
+- GM can still dismiss any selected army/navy.
 
-Place a token named exactly `Routed Pool`, or change the token name in module settings. Routed units are teleported to empty slots beside that token.
+### Siege / Storm
 
-## Install / update
+- Player siege attempts now route through the active GM client.
+- This fixes player permission errors when a successful siege needs to update a tile drawing.
+- Siege still commits the army for the turn.
+- Siege casualties still reduce the army strength.
+- Player-held tiles with a defending army still produce a pitched-battle GM alert instead of a quick siege roll.
+- NPC/neutral or undefended player tiles still use settlement + fortification DC only.
+- No garrisons are required.
 
-Use this manifest URL in Foundry:
+### Upkeep and economy
 
-https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json
+- Active armies and navies now charge upkeep when economy is collected.
+- Round Clock advance collects economy and applies military upkeep once for the new round.
+- Manual Collect Economy using All or Player scope also applies upkeep.
+- Selected-tile-only collection does not charge global upkeep.
+- Upkeep is deducted from the owner player's controlled tile stockpile.
+- If no controlled stockpile is found, the upkeep is listed as unpaid in the economy chat card.
 
-For GitHub release assets, upload this ZIP as:
+### Round clock / ledger tools
 
-battle-army-tools-v0.2.5.zip
+- Round Clock now has Advance Round + Economy.
+- Round Clock now has Go Back One Round.
+- Round Clock now has Collect Current Round.
+- Round Clock now has Reset Economy Ledger.
+- Reset Clock no longer silently clears the economy ledger; use Reset Economy Ledger when testing or correcting.
 
+### Tile ownership / culture / religion
 
-## v0.2.2 hotfix
+- Culture and Religion remain editable through Edit Tile Ownership / House Data.
+- Culture and Religion remain exported/imported through Tile Ownership CSV.
+- The merged tile ownership editor is the main GM workflow for ownership, ruler, culture, religion, sworn-to, marriage protection, and NPC diplomacy.
 
-- Player combat requests now prefer an active GM/Assistant GM viewing the same scene.
-- The player notification names the GM who received the request.
-- GM-side warnings are clearer when a request reaches a GM who is not on the battle scene.
+## Install
 
+Upload the matching zip to the GitHub release for this tag and update Foundry from the manifest.
 
-## v0.2.2 Hotfix
-
-- Adds `socket: true` to the manifest so player combat requests can be received by the active GM client.
-- Keeps the v0.2.1 active-GM same-scene routing behaviour.
-
-
-## Layout Update
-
-- Battle Turn HUD and Battle Actions panel are positioned on the left side so they do not obscure chat.
-
-
-## v0.2.5 Hotfix
-
-- Adds active-turn movement enforcement.
-- Players cannot move units outside the current tracker side/commander/alliance/formation.
-- GM movement override remains available through module settings for setup and corrections.
-
-
-## v0.2.5
-
-- Suppresses Battle Army Tools panels, HUD, tooltip, HP bars, and movement watcher on `Crown of Ashes` and `Crown of Ashes (Copy)`.
-- Supports the scene flag `world.battleArmyToolsSceneMode`: `battle` forces battle tools on; `world`, `overview`, or `off` disables them.
+- Tag: `v0.4.6`
+- Asset: `crown-overview-tools-v0.4.6.zip`
