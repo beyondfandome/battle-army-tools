@@ -1,8 +1,8 @@
 {
-  "id": "crown-overview-tools",
-  "title": "Crown Overview Tools",
-  "description": "Scene-gated strategic overview map tools for Crown of Ashes. v0.5.20 improves My Turn character/army detail, construction timing, player build feedback, and navy disembark cleanup.",
-  "version": "0.5.20",
+  "id": "battle-army-tools",
+  "title": "Battle Army Tools",
+  "description": "Battlefield army deployment, command, turn tracking, movement, and combat tools for Crown of Ashes.",
+  "version": "0.2.9",
   "authors": [
     {
       "name": "Beyond Fandome"
@@ -13,13 +13,10 @@
     "verified": "14"
   },
   "scripts": [
-    "scripts/crown-overview-tools-v0.5.20.js"
+    "scripts/battle-army-tools.js"
   ],
   "styles": [
-    "styles/crown-overview-tools.css"
+    "styles/battle-army-tools.css"
   ],
-  "url": "https://github.com/beyondfandome/crown-overview-tools",
-  "manifest": "https://raw.githubusercontent.com/beyondfandome/crown-overview-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/crown-overview-tools/releases/download/v0.5.20/crown-overview-tools-v0.5.20.zip",
   "socket": true
 }
