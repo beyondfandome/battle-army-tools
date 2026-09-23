@@ -20,6 +20,6 @@
   ],
   "socket": true,
   "url": "https://github.com/beyondfandome/battle-army-tools",
-  "manifest": "https://github.com/beyondfandome/battle-army-tools/releases/latest/download/module.json",
+  "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
   "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.3.3/battle-army-tools-v0.3.3.zip"
 }
