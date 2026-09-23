@@ -2,7 +2,7 @@
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
   "description": "Battlefield army deployment, command, turn tracking, movement, and combat tools for Crown of Ashes.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "authors": [
     {
       "name": "Beyond Fandome"
@@ -19,8 +19,7 @@
     "styles/battle-army-tools.css"
   ],
   "socket": true,
-
   "url": "https://github.com/beyondfandome/battle-army-tools",
   "manifest": "https://github.com/beyondfandome/battle-army-tools/releases/latest/download/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.3.2/battle-army-tools-v0.3.2.zip"
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.3.3/battle-army-tools-v0.3.3.zip"
 }
