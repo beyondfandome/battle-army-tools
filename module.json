@@ -1,8 +1,8 @@
 {
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
-  "description": "Battle Army Tools 0.4.6. Adds Crown army import/deployment integration and a GM Battle Strength live survivor counter.",
-  "version": "0.4.6",
+  "description": "Battle Army Tools 0.4.7. Adds GM movement-restriction pause/resume, reliable round advancement, and General token vision enforcement.",
+  "version": "0.4.7",
   "authors": [
     {
       "name": "Beyond Fandome"
@@ -21,5 +21,5 @@
   "socket": true,
   "url": "https://github.com/beyondfandome/battle-army-tools",
   "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.4.6/battle-army-tools-v0.4.6.zip"
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.4.7/battle-army-tools-v0.4.7.zip"
 }
