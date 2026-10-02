@@ -1,8 +1,8 @@
 {
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
-  "description": "Battle Army Tools 0.5.4. Fixes team tactical Drawing isolation by hiding Foundry v13 Drawing PrimaryGraphics/text display objects on unauthorized clients, while retaining combat undo and v0.5 systems.",
-  "version": "0.5.4",
+  "description": "Battle Army Tools 0.5.5. Adds anchor-free board-edge deployment and bulk assignment of selected battle units to a Foundry player, while retaining v0.5 combat, turn tracking, tactical Drawing isolation, and undo systems.",
+  "version": "0.5.5",
   "authors": [
     {
       "name": "Beyond Fandome"
@@ -21,5 +21,5 @@
   "socket": true,
   "url": "https://github.com/beyondfandome/battle-army-tools",
   "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.5.4/battle-army-tools-v0.5.4.zip"
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.5.5/battle-army-tools-v0.5.5.zip"
 }
