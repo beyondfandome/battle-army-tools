@@ -1,8 +1,12 @@
-# Crown Overview Tools v0.5.10
+# Battle Army Tools v0.5.10
 
-## Fixed: diplomatic takeover not appearing in House holdings
-- Successful diplomatic takeovers now resolve the **attacking character’s assigned player/controller first**.
-- The GM/requesting user is only used as a fallback when the character has no controller assignment.
-- This fixes cases such as the Foresters where the province could receive the correct House name but the wrong player controller ID, preventing it from appearing in **My Holdings** and other controller-based House systems.
-- Takeover history now records both the requester and the controller who actually received the province for easier auditing.
-- Canonical House resolution now uses the resolved character controller, so House-name recovery from existing holdings follows the correct player.
+## Deployment ownership verification
+
+- **Deploy Units** now uses the same effective Actor / synthetic Actor ownership workflow as **Assign Selected Units** after token creation.
+- Every deployed formation is forced to `actorLink: false`, preventing battle units from accidentally sharing ownership through a linked base Actor.
+- Every deployment receives an explicit ActorDelta ownership map, including **GM / Unassigned**, so base unit Actor permissions cannot leak into newly deployed formations.
+- After bulk token creation, BAT verifies and reapplies exclusive ownership on each effective synthetic Actor before reporting success.
+- Deployment now reports an error with affected token names if ownership verification fails instead of claiming a clean deployment.
+- Player ownership remains exclusive: the assigned player is OWNER; other players are not owners.
+
+All v0.5.9 functionality is otherwise retained.
