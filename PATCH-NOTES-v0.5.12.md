@@ -1,12 +1,19 @@
-# Crown Overview Tools v0.5.12
+# Battle Army Tools v0.5.12
 
-## Mustering / Holdings identity fix
-- Explicit `controllerPlayerUserId/controllerPlayerName` now takes priority over legacy token/actor owner fields when determining which player realm a character belongs to.
-- Army manpower now derives directly from that player’s **My Holdings** result, filtered to non-sea provinces. There is no longer a separate ownership algorithm for mustering.
-- The muster dialog shows the resolved **Realm Controller** and labels the counted total as **land provinces** for easier diagnosis.
-- Pending army/navy muster ownership now uses the same resolved character controller, avoiding stale original-token owner data.
+## Ownership controller rewrite
 
-## Political ownership model retained
-- A province keeps its original/local House name after conquest.
-- Diplomacy and siege change political allegiance/controller to the conquering player House.
-- My Holdings remains controller-driven, so sworn/conquered Houses contribute to the conquering realm without being renamed.
+- Replaced troop ownership through per-token ActorDelta overrides with one lightweight linked **BAT Controller Actor** per Foundry player (plus an unassigned controller).
+- Deploying units now links each troop token directly to the selected player's controller Actor.
+- **Assign Selected Units** now re-links selected troop tokens to the destination player's controller Actor. The previous player's controller is no longer attached to those tokens, so previous control is removed structurally rather than by merging/deleting ActorDelta ownership keys.
+- General/commander tokens remain linked to their real Commander Actor and continue to use exclusive Actor ownership.
+- Deployment and reassignment verify Foundry's resolved Token ownership level before reporting success.
+- BAT owner metadata is written only after reassignment succeeds.
+- Explicit Player Owner selection during deployment still takes precedence over commander inheritance.
+
+## Vision rollback
+
+- Removed the v0.5.6 **Optimize Battle Vision** setting and its automatic sight-policy enforcement.
+- Restored the pre-v0.5.6 behavior: player-assigned formations receive normal token sight; General/commander vision remains enabled at range 8.
+- BAT no longer contains the optional commanders-only vision optimization.
+
+All other v0.5.11 battle systems are retained.

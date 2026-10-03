@@ -1,8 +1,8 @@
 {
   "id": "battle-army-tools",
   "title": "Battle Army Tools",
-  "description": "Battle Army Tools 0.5.11. Fixes deployment and reassignment ownership by persisting unlinked formation permissions directly through ActorDelta, rebuilding synthetic Actors, forcing a Token refresh for immediate player control, and preventing commander selection from silently discarding an explicit deployment player. Retains large-battle vision optimization, board-edge deployment, combat, turn tracking, tactical Drawing isolation, and undo systems.",
-  "version": "0.5.11",
+  "description": "Battle Army Tools 0.5.13. Fixes Commander turn tracking for battles with multiple commanders inside two or more teams. Commander mode now gives each commander a separate turn, groups the suggested order by Team, shows Team + Commander in the Battle Turn HUD, and correctly matches command-token rows/resets. Retains v0.5.12 controller-Actor ownership, board-edge deployment, combat, tactical Drawing isolation, and undo systems.",
+  "version": "0.5.13",
   "authors": [
     {
       "name": "Beyond Fandome"
@@ -21,5 +21,5 @@
   "socket": true,
   "url": "https://github.com/beyondfandome/battle-army-tools",
   "manifest": "https://raw.githubusercontent.com/beyondfandome/battle-army-tools/main/module.json",
-  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.5.11/battle-army-tools-v0.5.11.zip"
+  "download": "https://github.com/beyondfandome/battle-army-tools/releases/download/v0.5.13/battle-army-tools-v0.5.13.zip"
 }
