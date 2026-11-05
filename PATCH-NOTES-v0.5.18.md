@@ -1,13 +1,10 @@
-# Crown Overview Tools v0.5.18
+# Battle Army Tools v0.5.18 (clean rebuild from v0.5.17)
 
-## Neutral / Unaligned Territory Reset
-- Added **GM: Tile Ownership → Make Territory Neutral / Unaligned**.
-- Select exactly one world-tile drawing, then click the button.
-- The territory's original/local House identity is preserved.
-- `allegiance` is set to **Unaligned** in both World Tile and House Data.
-- Player/controller ownership and sworn-to-player fields are cleared.
-- Ownership type becomes **Neutral**.
-- The territory therefore drops out of all player **My Holdings** lists and manpower pools.
-- A confirmation dialog and post-save verification are included.
-
-All v0.5.17 and earlier diplomacy, siege, allegiance, holdings, manpower, and character-menu fixes are retained.
+- Preserves full original management actions: Deploy Units, Import Crown Army, Assign Selected Units, commander tools, tracker, tactical drawings, resets, unit balance, etc.
+- Preserves synchronized five-minute turn timer, GM pause/resume/reset, automatic turn advancement.
+- Focus Fire: Bowman, Crossbowman, Horse Archer; automatic +1d10 for every previous qualifying ranged attack against same enemy token in current round, capped +3d10; no friendly fire on qualifying attacks, even first (+0) attack.
+- Charge +3d10 for Mob/Light Cavalry/Heavy Cavalry; Lancer +4d10; no command point; Brace preemptive; Form Up +2d10 Defence; Volley +3d10.
+- Spearman +1d10 vs cavalry; Crossbowman +1d10 vs heavy infantry/cavalry; updated melee Flanking eligibility.
+- Changed Mob move 7, Heavy Infantry move 4, Pikeman attack 7, Crossbowman attack 5; Ballista gains heavy siege reload.
+- Draggable, scrollable Battle Actions with persisted position; 2 columns only when >10 visible buttons. Timer placed bottom-left above macro hotbar.
+- No live Foundry session testing performed. Back up world before deployment.

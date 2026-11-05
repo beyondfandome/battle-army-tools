@@ -2,6 +2,22 @@
 
 Foundry VTT battle-management tools for the Crown of Ashes campaign.
 
+## v0.5.15
+
+Restores explicit vision for every battle unit. Ordinary troops keep their normal prototype sight distance, Generals retain range 8, and Siege Engines use their BAT Range stat as sight range. This release also retains the v0.5.14 five-minute auto-advance timer and expanded player assignment workflow.
+
+### Install / update
+
+Repository: `https://github.com/beyondfandome/battle-army-tools`
+
+Manifest: `https://github.com/beyondfandome/battle-army-tools/releases/latest/download/module.json`
+
+Release tag: `v0.5.15`
+
+Release asset: `battle-army-tools-v0.5.15.zip`
+
+See `PATCH-NOTES-v0.5.15.md` for the full change list.
+
 ## v0.5.13
 
 Fixes Commander turn tracking for multi-command battles. Commander mode now gives each commander an individual turn while grouping the suggested order by Team, and the Battle Turn HUD displays both the active Team and Commander.
